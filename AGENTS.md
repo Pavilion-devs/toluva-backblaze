@@ -190,6 +190,13 @@ checks. `Manifest.verify()` validates the canonical manifest and declared hash
 metadata; Toluva must also recompute the stored object's SHA-256 and compare it
 with the manifest before describing the asset bytes as verified.
 
+For file-backed Genblaze providers used with `ObjectStorageSink`, keep provider
+outputs in the system temporary directory unless the SDK exposes an explicit
+allowed-root configuration. The current sink rejects project-local
+`output_dir` files even when the provider created them. Preserve the failed
+attempt and a sanitized failure record, then retry from an accepted path. See
+`docs/genblaze-feedback-allowed-output-root.md`.
+
 ### The app must fail honestly
 
 - A failed provider call must produce a visible failed/retryable state.

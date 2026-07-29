@@ -1,5 +1,9 @@
+from pathlib import Path
+
 import pytest
 
+from toluva_pipeline.settings import Settings
+from toluva_pipeline.storage.b2 import build_b2_storage
 from toluva_pipeline.storage.keys import StorageScope, ToluvaObjectKeys
 
 
@@ -28,3 +32,26 @@ def test_scope_cannot_cross_projects() -> None:
 def test_unsafe_identifiers_are_rejected(unsafe_id: str) -> None:
     with pytest.raises(ValueError):
         ToluvaObjectKeys(unsafe_id)
+
+
+def test_b2_storage_can_be_constructed_without_network_preflight() -> None:
+    settings = Settings(
+        work_dir=Path("work"),
+        max_timing_retries=2,
+        green_drift_threshold=0.08,
+        amber_drift_threshold=0.15,
+        b2_key_id="placeholder-key-id",
+        b2_app_key="placeholder-app-key",
+        b2_bucket="placeholder-bucket",
+        b2_region="us-east-005",
+        elevenlabs_api_key=None,
+        assemblyai_api_key=None,
+        openai_api_key=None,
+    )
+    storage = build_b2_storage(
+        settings,
+        StorageScope("project-01", "job-01", "de-DE"),
+        preflight=False,
+    )
+    assert storage.sink is not None
+    assert storage.backend is not None

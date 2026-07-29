@@ -1,7 +1,7 @@
 # Toluva — Product, Architecture, and Win Plan
 
 Last updated: July 29, 2026  
-Status: Product scaffold and core pipeline foundation complete; live provider spike next
+Status: First live ElevenLabs-to-B2 segment verified; timing-correction loop next
 Submission deadline: August 3, 2026 at 10:00 p.m. WAT  
 Internal submission target: August 3, 2026 at 6:00 p.m. WAT
 
@@ -751,16 +751,35 @@ Completed without provider credentials:
   canonical manifest, verified the manifest, and independently matched the
   declared asset SHA-256 to the referenced file bytes.
 - Added a FastAPI service boundary and secret-safe readiness endpoint.
-- Locked the Python dependency graph and passed 35 service tests.
+- Locked the Python dependency graph and passed 39 service tests.
 
 Live portion still required:
 
-- The environment does not currently contain `B2_KEY_ID`, `B2_APP_KEY`,
-  `B2_BUCKET`, `B2_REGION`, or `ELEVENLABS_API_KEY`.
-- Therefore no B2 object was written and no ElevenLabs credits were spent in
-  this phase.
-- Once those credentials are injected privately, run the 15–30-second live
-  segment path before choosing a paid plan, voice, or final demo languages.
+- Completed on July 29 with credentials stored only in the ignored local
+  environment.
+- Created a private, bucket-scoped Backblaze key with read/write access limited
+  to the `projects/` prefix, S3 bucket listing enabled, and a 30-day expiry.
+- Verified the B2 region and authenticated Genblaze storage preflight.
+- Ran ElevenLabs Flash v2.5 through the Genblaze ElevenLabs adapter with a
+  54-character German stock-voice sample and timestamped output.
+- The first provider call generated audio but the Genblaze storage transfer
+  rejected the project-local provider output path. The audio and a sanitized
+  failure record were preserved in B2; no manifest was claimed for that failed
+  run.
+- Retried from Genblaze's accepted temporary path. The run completed, returned
+  seven word timings, stored the audio and canonical manifest in B2, downloaded
+  the stored audio, and matched its SHA-256.
+- Independently measured 3.668753 seconds against a 4.0-second slot:
+  `drift_ratio = -0.08281175`. Toluva correctly classified it amber and selected
+  natural silence padding.
+- B2 now contains seven current objects spanning authorization evidence,
+  authorization record, failed attempt, failure record, successful audio,
+  Genblaze manifest, and QA report.
+- Across the failed transfer and successful retry, 108 characters were sent to
+  ElevenLabs. Exact credit debit still needs confirmation from provider usage
+  reporting before choosing a paid plan.
+- Logged the transfer-allowlist behavior as a reproducible Genblaze feedback
+  candidate in `docs/genblaze-feedback-allowed-output-root.md`.
 
 ## 16. Delivery Schedule
 
@@ -1085,6 +1104,27 @@ final MP4 path.
 
 Reason: A sidecar is inspectable, storage-friendly, and sufficient for the
 first auditable vertical slice without risking media-container regressions.
+
+### 2026-07-29 — First live TTS and storage path
+
+Decision: Use ElevenLabs `eleven_flash_v2_5` with the Genblaze ElevenLabs
+adapter as the initial live TTS candidate. Use a platform stock voice for the
+integration spike; cloning remains uncommitted until consent, plan access, and
+quality are verified.
+
+Reason: The 54-character German test returned timestamped speech, completed
+quickly, and exercised the exact Genblaze-to-B2 path at negligible development
+scale.
+
+### 2026-07-29 — File-backed provider transfer workaround
+
+Decision: Leave the ElevenLabs provider `output_dir` unset so its file lands in
+the system temporary directory accepted by Genblaze's transfer guard.
+
+Reason: A project-local output directory caused the provider call to succeed
+but `ObjectStorageSink` to reject the asset as outside its allowed roots. The
+public sink constructor does not expose `AssetTransfer.allowed_roots`. The
+failed attempt remains in B2 with an explicit failure record.
 
 ## 22. Official References
 

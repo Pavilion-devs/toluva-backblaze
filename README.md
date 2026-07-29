@@ -6,10 +6,11 @@ communications teams.
 > One source. Multiple languages. Every voice authorized, every segment
 > time-fit, and every output verifiable.
 
-This repository contains the interactive product scaffold and the first real
+This repository contains the interactive product scaffold and a verified live
 pipeline foundation. The UI still uses prepared demonstration data, while the
-Python service now enforces voice authorization, evaluates timing drift, and
-produces verified Genblaze provenance locally.
+Python service now enforces voice authorization, evaluates timing drift, calls
+ElevenLabs through Genblaze, and stores verified media and provenance in
+Backblaze B2.
 
 ## What is implemented
 
@@ -26,6 +27,8 @@ produces verified Genblaze provenance locally.
 - Append-only B2 object-key construction and a scoped Genblaze B2 sink
 - A zero-cost Genblaze run with a canonical manifest and independent media-byte
   hash verification
+- A live 54-character German ElevenLabs TTS run with word timestamps, B2-backed
+  audio, a canonical Genblaze manifest, and downloaded-byte verification
 - A FastAPI boundary for health, authorization, timing, and local spike runs
 
 ## Run locally
@@ -58,8 +61,10 @@ See `services/pipeline/README.md` for the API and credential-readiness commands.
 - The dashboard is interactive, but its media/run records remain clearly
   labelled prepared demo data.
 - The browser never receives provider or storage credentials.
-- Live B2 and ElevenLabs smoke tests require private credentials that are not
-  currently present in the environment.
+- B2 and ElevenLabs credentials are configured only in the ignored local
+  environment; they are absent from tracked files.
+- The first live worker path runs locally and is not connected to the hosted UI
+  yet.
 - The timing thresholds are product defaults to be validated through the first
   live speech sample.
 - Toluva is evidence-ready and compliance-supporting; it does not guarantee

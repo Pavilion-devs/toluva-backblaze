@@ -54,8 +54,7 @@ Then inspect `http://127.0.0.1:8000/health`.
 Copy the repository `.env.example` to a private environment file or inject the
 variables through the worker host. Do not expose them to the web app.
 
-Live B2 and ElevenLabs calls remain intentionally disabled until all of these
-are configured:
+Live B2 and ElevenLabs calls require all of these to be configured:
 
 - `B2_KEY_ID`
 - `B2_APP_KEY`
@@ -66,3 +65,20 @@ are configured:
 The B2 key must be least privilege and restricted to the demo bucket. The
 integration uses `auto_lifecycle=False`; the worker will not silently change
 bucket-wide lifecycle rules.
+
+After both providers pass readiness, the deliberately small billable spike is:
+
+```bash
+PYTHONPATH=services/pipeline/src \
+  services/pipeline/.venv/bin/python -m toluva_pipeline.cli \
+  live-tts-spike --confirm-spend
+```
+
+The explicit flag prevents an ordinary test or page load from spending credits.
+The command generates one short German stock-voice sample, stores the
+authorization record, audio, and Genblaze manifest in B2, measures duration
+with `ffprobe`, and downloads the stored object to verify its SHA-256.
+
+The first verified live run produced 3.668753 seconds of speech for a
+4.0-second slot, returned seven word timings, and selected amber/silence
+padding at -8.281175% drift.

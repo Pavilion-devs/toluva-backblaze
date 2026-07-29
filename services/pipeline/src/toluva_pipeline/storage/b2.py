@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from genblaze_core import KeyStrategy, ObjectStorageSink
 from genblaze_s3 import S3StorageBackend
 
@@ -13,13 +15,19 @@ class CredentialConfigurationError(RuntimeError):
     pass
 
 
-def build_b2_sink(
+@dataclass(frozen=True)
+class B2Storage:
+    backend: S3StorageBackend
+    sink: ObjectStorageSink
+
+
+def build_b2_storage(
     settings: Settings,
     scope: StorageScope,
     *,
     preflight: bool = True,
-) -> ObjectStorageSink:
-    """Build a scoped sink without changing bucket-wide lifecycle rules."""
+) -> B2Storage:
+    """Build a scoped backend and sink without bucket-wide lifecycle changes."""
 
     readiness = settings.readiness()["b2"]
     if not settings.b2_ready:
@@ -36,8 +44,22 @@ def build_b2_sink(
         auto_lifecycle=False,
         preflight=preflight,
     )
-    return ObjectStorageSink(
-        backend,
-        prefix=scope.genblaze_prefix,
-        key_strategy=KeyStrategy.HIERARCHICAL,
+    return B2Storage(
+        backend=backend,
+        sink=ObjectStorageSink(
+            backend,
+            prefix=scope.genblaze_prefix,
+            key_strategy=KeyStrategy.HIERARCHICAL,
+        ),
     )
+
+
+def build_b2_sink(
+    settings: Settings,
+    scope: StorageScope,
+    *,
+    preflight: bool = True,
+) -> ObjectStorageSink:
+    """Backward-compatible convenience wrapper for pipeline-only callers."""
+
+    return build_b2_storage(settings, scope, preflight=preflight).sink
