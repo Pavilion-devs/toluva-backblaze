@@ -1,7 +1,7 @@
 # Toluva — Product, Architecture, and Win Plan
 
 Last updated: July 29, 2026  
-Status: Pre-build strategy locked; provider spike and scaffolding next  
+Status: Product scaffold and core pipeline foundation complete; live provider spike next
 Submission deadline: August 3, 2026 at 10:00 p.m. WAT  
 Internal submission target: August 3, 2026 at 6:00 p.m. WAT
 
@@ -729,6 +729,39 @@ Exit criteria:
 - Cost and language feasibility are known.
 - Any Genblaze SDK issue is documented for a useful feedback submission.
 
+### Spike progress — July 29
+
+Completed without provider credentials:
+
+- Installed and pinned the current compatible PyPI packages:
+  `genblaze-core==0.3.8`, `genblaze-s3==0.3.6`, and
+  `genblaze-elevenlabs==0.3.3`.
+- Confirmed Genblaze's current `PipelineResult` interface, manifest schema 1.5,
+  strict manifest verification, ElevenLabs timestamp option, and Backblaze
+  storage-sink interface.
+- Verified `ffmpeg` and `ffprobe` are installed.
+- Implemented the pre-generation authorization gate with tests for allowed,
+  expired, revoked, wrong-language, wrong-purpose, wrong-voice, invalid
+  evidence, and missing-authorization cases.
+- Implemented timing measurement and bounded decisions with threshold-boundary
+  tests.
+- Implemented append-only B2 object keys and a scoped hierarchical Genblaze
+  sink. Bucket-wide lifecycle mutation is explicitly disabled.
+- Ran a zero-cost Genblaze pipeline against deterministic local audio, wrote a
+  canonical manifest, verified the manifest, and independently matched the
+  declared asset SHA-256 to the referenced file bytes.
+- Added a FastAPI service boundary and secret-safe readiness endpoint.
+- Locked the Python dependency graph and passed 35 service tests.
+
+Live portion still required:
+
+- The environment does not currently contain `B2_KEY_ID`, `B2_APP_KEY`,
+  `B2_BUCKET`, `B2_REGION`, or `ELEVENLABS_API_KEY`.
+- Therefore no B2 object was written and no ElevenLabs credits were spent in
+  this phase.
+- Once those credentials are injected privately, run the 15–30-second live
+  segment path before choosing a paid plan, voice, or final demo languages.
+
 ## 16. Delivery Schedule
 
 ### July 29 — Lock and spike
@@ -949,11 +982,11 @@ before compromising the core vertical slice.
 
 Resolve during scaffolding or the first spike:
 
-- [ ] Web framework
-- [ ] API framework
+- [x] Web framework — Next.js 16 UI compiled by Vinext for Cloudflare/Sites
+- [x] API framework — Python 3.12 with FastAPI
 - [ ] Metadata database
 - [ ] Job queue/worker approach
-- [ ] Hosting target
+- [ ] Worker hosting target; web hosting is locked to OpenAI Sites
 - [ ] Transcription provider/model
 - [ ] Translation provider/model
 - [ ] Primary TTS provider/model
@@ -962,10 +995,12 @@ Resolve during scaffolding or the first spike:
 - [ ] Paid TTS plan
 - [ ] Final target languages
 - [ ] Source sample and rights
-- [ ] Media composition implementation
+- [x] Media composition implementation — FFmpeg/ffprobe foundation; final
+      composition command still requires the live sample
 - [ ] Exact tempo-adjustment limit
 - [ ] Visible disclosure format
-- [ ] Manifest embedding versus sidecar strategy
+- [x] Manifest strategy — canonical sidecar is required first; embedding may be
+      added only after final-container compatibility testing
 - [ ] Authentication versus public judge-demo mode
 
 ## 21. Decision Log
@@ -1005,6 +1040,52 @@ guaranteed AI Act or other legal compliance.
 Reason: The product can preserve useful authorization and provenance evidence,
 but legal applicability is context-dependent.
 
+### 2026-07-29 — Web and pipeline execution boundary
+
+Decision: Keep the Sites-hosted Next.js/Vinext experience separate from a
+Python 3.12 FastAPI pipeline service.
+
+Reason: Genblaze and long-running media work belong in a durable Python worker,
+not in the browser or a short-lived web request. This boundary also guarantees
+that B2 and provider credentials never reach client code.
+
+### 2026-07-29 — Initial Genblaze package pins
+
+Decision: Pin the first verified package set to `genblaze-core==0.3.8`,
+`genblaze-s3==0.3.6`, and `genblaze-elevenlabs==0.3.3`.
+
+Reason: These are the compatible versions resolved from PyPI and exercised by
+the local provenance test. Revisit only through an explicit upgrade spike.
+
+### 2026-07-29 — B2 sink safety and naming
+
+Decision: Use `B2_REGION` with Genblaze's Backblaze factory, hierarchical keys
+scoped below the project/job/language, and `auto_lifecycle=False`.
+
+Reason: The current adapter derives the S3 endpoint from the region.
+Human-inspectable prefixes strengthen the demo and audit story, while disabling
+automatic lifecycle changes prevents an integration test from mutating
+bucket-wide policy.
+
+### 2026-07-29 — Provenance verification contract
+
+Decision: Treat Genblaze manifest verification and asset-byte verification as
+two separate required checks.
+
+Reason: `Manifest.verify()` validates canonical integrity and declared output
+hash metadata; it does not fetch a remote asset and recompute its bytes. Toluva
+must compare the stored object's bytes to the declared SHA-256 before calling
+an asset verified.
+
+### 2026-07-29 — Initial manifest delivery
+
+Decision: Preserve a canonical Genblaze manifest sidecar for every output.
+Container embedding remains optional until compatibility is tested against the
+final MP4 path.
+
+Reason: A sidecar is inspectable, storage-friendly, and sufficient for the
+first auditable vertical slice without risking media-container regressions.
+
 ## 22. Official References
 
 Hackathon:
@@ -1039,4 +1120,3 @@ EU AI Act transparency context:
   https://digital-strategy.ec.europa.eu/en/factpages/quick-facts-transparency-rules-ai-systems
 - Official regulation:
   https://eur-lex.europa.eu/eli/reg/2024/1689/oj
-

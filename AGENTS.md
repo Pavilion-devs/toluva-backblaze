@@ -146,6 +146,16 @@ Never hide failed attempts from the audit trail.
 - Avoid provider quantity as a vanity metric. Every provider must have a clear
   operational reason.
 
+The current execution boundary is deliberate:
+
+- The Sites-hosted Next.js/Vinext app is the user experience.
+- The Python 3.12 FastAPI service under `services/pipeline` owns Genblaze and
+  long-running media work.
+- Never move B2 or provider credentials into the browser or the Sites runtime.
+- The first verified package pins are `genblaze-core==0.3.8`,
+  `genblaze-s3==0.3.6`, and `genblaze-elevenlabs==0.3.3`. Upgrade them only
+  through an explicit provider spike and update `plan.md`.
+
 ### Backblaze B2 must be the system of record
 
 B2 is not a final-file dump. Store:
@@ -169,6 +179,16 @@ records that are outside generated pipeline outputs, but it must be documented.
 
 Use deterministic, human-inspectable object keys. Never expose long-lived B2
 credentials to the browser.
+
+The current Genblaze Backblaze adapter uses `B2_REGION` to derive its endpoint.
+Keep generated sinks scoped beneath the project/job/language prefix, use the
+hierarchical key strategy, and keep `auto_lifecycle=False` unless a separately
+reviewed infrastructure decision explicitly authorizes bucket-wide changes.
+
+Genblaze manifest verification and stored-asset verification are separate
+checks. `Manifest.verify()` validates the canonical manifest and declared hash
+metadata; Toluva must also recompute the stored object's SHA-256 and compare it
+with the manifest before describing the asset bytes as verified.
 
 ### The app must fail honestly
 
@@ -339,4 +359,3 @@ Before submission:
   required technologies.
 - When in doubt, prioritize judge-visible reliability and clarity over feature
   count.
-
