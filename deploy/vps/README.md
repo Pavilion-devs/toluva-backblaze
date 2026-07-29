@@ -124,6 +124,18 @@ unrelated service units.
   The worker no longer uploads heartbeat state twice on every idle poll.
 - The local `linux/amd64` image passed secret-safe readiness, both pinned model
   hashes, and the complete 87-test pipeline suite before deployment.
+- The deployed image ID exactly matched the local image ID:
+  `sha256:6c78a0ef5cedcd38b2a2165fd23c3632dc002a530c536006f38c4065f5c7e4c3`.
+  The container returned `running healthy` with zero restarts, no ports, the
+  original isolation limits, and root-only environment mode `0600`.
+- Consecutive production ticks settled to one idle scan per minute with no
+  repeat of the old completed-job failure loop. A new uploaded handshake
+  remains intentionally blocked until Backblaze permits object downloads
+  again; no ElevenLabs call was made.
+- Both unrelated services were active after deployment and the Dara health
+  endpoint remained green. The Dara API process ID changed during the long
+  model-image transfer without a command targeting its unit; no kernel OOM was
+  recorded. The Cloudflare tunnel process remained unchanged.
 
 ## Rollback
 

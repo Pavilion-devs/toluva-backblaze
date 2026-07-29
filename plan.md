@@ -1,7 +1,7 @@
 # Toluva — Product, Architecture, and Win Plan
 
 Last updated: July 29, 2026  
-Status: transaction-budgeted queue-v2 worker ready; production handshake next
+Status: queue-v2 deployed; production handshake waiting on B2 read-cap reset
 Submission deadline: August 3, 2026 at 10:00 p.m. WAT  
 Internal submission target: August 3, 2026 at 6:00 p.m. WAT
 
@@ -993,6 +993,20 @@ Durable upload and queue slice completed:
   readiness, and pinned Whisper/Argos model-hash verification. The interrupted
   handshake used no new ElevenLabs credits and will resume only after B2 reads
   are available.
+- Deployed queue v2 as the pinned `linux/amd64` image
+  `sha256:6c78a0ef5cedcd38b2a2165fd23c3632dc002a530c536006f38c4065f5c7e4c3`.
+  The VPS image matched locally, the container reached `running healthy` with
+  zero restarts, and all original resource, user, capability, and no-port
+  controls remained active.
+- Consecutive production ticks now show one idle scan per minute and no
+  completed-job failure loop. The root-only environment remains mode `0600`.
+  Both unrelated services were active and Dara's health endpoint was green
+  after deployment.
+- The Dara API process ID changed during the long model-image transfer even
+  though no command targeted its unit or configuration; the Cloudflare tunnel
+  process stayed unchanged and the kernel recorded no OOM. Avoid another
+  model-image transfer on this shared host unless a worker-image change is
+  submission-critical.
 
 ## 16. Delivery Schedule
 
