@@ -13,6 +13,10 @@ The first vertical-slice foundation includes:
   stops after a configured retry budget
 - One Genblaze run and manifest per speech attempt with parent/child lineage
 - Append-only B2 translation, timing, failure, and summary records
+- Validated timed-transcript and WebVTT generation
+- A Toluva Genblaze FFmpeg compositor that fans in video, localized audio, and
+  captions
+- Embedded MP4 caption tracks plus durable WebVTT sidecars
 - Append-only, human-inspectable B2 object keys
 - A scoped Genblaze Backblaze sink with lifecycle mutation disabled
 - A real Genblaze manifest run over deterministic local audio bytes
@@ -116,3 +120,30 @@ the rewrite as model-generated.
   manifests, two timing records, and the final summary.
 - Provider auto-retry is disabled for this adapter path because an ambiguous
   retry could double-bill. The Toluva engine owns explicit correction attempts.
+
+## Captioned composition slice
+
+The zero-new-credit composition command reuses the accepted green TTS attempt:
+
+```bash
+PYTHONPATH=services/pipeline/src \
+  services/pipeline/.venv/bin/python -m toluva_pipeline.cli \
+  compose-live-slice --confirm-write
+```
+
+The command:
+
+1. Downloads and re-verifies the selected speech bytes against its stored
+   Genblaze manifest.
+2. Produces a labelled deterministic source/transcript fixture.
+3. Generates WebVTT captions from validated timed segments.
+4. Runs a three-input Genblaze fan-in through Toluva's FFmpeg provider.
+5. Pads the measured 0.224-second audio gap without stretching speech.
+6. Stores and re-verifies the final MP4 and composition manifest.
+7. Writes a synthetic-media disclosure and final record without local paths.
+
+The verified output is exactly 3.8 seconds and contains H.264 video, AAC audio,
+and a `mov_text` subtitle stream. Its SHA-256 is
+`7e3c40a3f685ab57427e6cfa86a32871764ac48b898c65e388769ea0e0d44cf4`.
+The job now contains 14 B2 objects, with three additional source/transcript
+objects under the project. No new model credits were spent.

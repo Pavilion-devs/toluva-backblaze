@@ -38,6 +38,7 @@ from toluva_pipeline.storage.b2 import (
 )
 from toluva_pipeline.storage.journal import B2CorrectionJournal
 from toluva_pipeline.storage.keys import StorageScope, ToluvaObjectKeys
+from toluva_pipeline.storage.records import put_immutable
 
 LIVE_PROJECT_ID = "spike-project"
 LIVE_JOB_ID = "timing-red-green-v1"
@@ -222,20 +223,6 @@ class GenblazeElevenLabsAttemptGenerator:
         )
 
 
-def _put_immutable(
-    backend: S3StorageBackend,
-    key: str,
-    data: bytes,
-    *,
-    content_type: str,
-) -> None:
-    if backend.exists(key):
-        if backend.get(key) != data:
-            raise RuntimeError(f"Immutable B2 record conflicts with existing key: {key}")
-        return
-    backend.put(key, data, content_type=content_type)
-
-
 def run_live_timing_correction(
     settings: Settings,
     *,
@@ -303,13 +290,13 @@ def run_live_timing_correction(
             "Synthetic stock voice used for a Toluva timing-correction spike."
         ),
     }
-    _put_immutable(
+    put_immutable(
         storage.backend,
         evidence_key,
         evidence,
         content_type="text/plain",
     )
-    _put_immutable(
+    put_immutable(
         storage.backend,
         authorization_key,
         json.dumps(authorization_record, sort_keys=True).encode("utf-8"),

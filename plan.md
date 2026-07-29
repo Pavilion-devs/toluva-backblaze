@@ -1,7 +1,7 @@
 # Toluva — Product, Architecture, and Win Plan
 
 Last updated: July 29, 2026  
-Status: Live red-to-green timing-correction loop verified; vertical slice next
+Status: Captioned Genblaze composition verified; live STT/translation next
 Submission deadline: August 3, 2026 at 10:00 p.m. WAT  
 Internal submission target: August 3, 2026 at 6:00 p.m. WAT
 
@@ -659,21 +659,21 @@ The user sees:
 - [x] Stable hosted web application
 - [ ] Preloaded judge-friendly sample
 - [ ] Source-video upload or ingest
-- [ ] B2 source storage
+- [x] B2 source storage
 - [ ] Timed transcription
-- [ ] Segmentation
+- [x] Segmentation
 - [x] Voice-authorization record
 - [x] Pre-generation authorization gate
 - [ ] Target-language selection
-- [ ] Protected terminology
+- [x] Protected terminology
 - [ ] Translation
 - [x] Genblaze TTS generation
 - [x] Actual duration measurement
 - [x] Drift classification
 - [x] Bounded rewrite/regeneration loop
-- [ ] Captions
-- [ ] Final media composition
-- [ ] B2 storage for intermediates and finals
+- [x] Captions
+- [x] Final media composition
+- [x] B2 storage for intermediates and finals
 - [x] Genblaze manifests/lineage
 - [ ] Job and segment status UI
 - [ ] Source/final playback comparison
@@ -751,7 +751,7 @@ Completed without provider credentials:
   canonical manifest, verified the manifest, and independently matched the
   declared asset SHA-256 to the referenced file bytes.
 - Added a FastAPI service boundary and secret-safe readiness endpoint.
-- Locked the Python dependency graph and passed 52 service tests.
+- Locked the Python dependency graph and passed 63 service tests.
 
 Live portion completed:
 
@@ -809,6 +809,34 @@ Timing-correction loop completed:
 - The rewrite was deliberately labelled `human-reviewed-scripted-spike`.
   Translation-provider integration remains a separate next step and the result
   is not misrepresented as an LLM rewrite.
+
+Captioned composition completed:
+
+- Added validated timed transcript/segment contracts and deterministic WebVTT
+  generation, including overlap, duplicate-ID, and timestamp-boundary tests.
+- Created a Toluva Genblaze `SyncProvider` that performs a genuine three-input
+  fan-in over source video, selected localized audio, and captions.
+- Reused the previously verified green ElevenLabs asset. No new provider call
+  or model credit was required.
+- Re-verified the selected audio bytes against its stored Genblaze manifest
+  before composition.
+- Generated a clearly labelled deterministic source/transcript fixture and
+  stored the source MP4, timed transcript, and segment records in B2.
+- Generated a WebVTT caption sidecar and embedded the same captions as a
+  `mov_text` stream in the final MP4.
+- Silence-padded the measured 0.224-second shortfall to the 3.8-second source
+  slot without slowing or stretching the accepted speech.
+- The final MP4 is exactly 3.8 seconds and contains H.264 video, AAC audio, and
+  a subtitle stream.
+- The final bytes matched SHA-256
+  `7e3c40a3f685ab57427e6cfa86a32871764ac48b898c65e388769ea0e0d44cf4`.
+  The stored composition manifest also verified.
+- The timing job now contains 14 objects in B2; the project source tree contains
+  three source/transcript objects. A disclosure record and sanitized final
+  record link the complete output lineage without local filesystem paths.
+- The fixture proves the ingest-record, caption, fan-in, composition, and final
+  storage engine. It is not represented as live STT or the final licensed demo
+  source.
 
 ## 16. Delivery Schedule
 
@@ -1043,8 +1071,8 @@ Resolve during scaffolding or the first spike:
 - [ ] Paid TTS plan
 - [ ] Final target languages
 - [ ] Source sample and rights
-- [x] Media composition implementation — FFmpeg/ffprobe foundation; final
-      composition command still requires the live sample
+- [x] Media composition implementation — Genblaze video/audio/caption fan-in
+      through FFmpeg verified; final licensed sample still required
 - [ ] Exact tempo-adjustment limit
 - [ ] Visible disclosure format
 - [x] Manifest strategy — canonical sidecar is required first; embedding may be
@@ -1185,6 +1213,36 @@ Reason: No translation-provider credential is configured. This proves the
 timing engine, Genblaze lineage, B2 persistence, and TTS behavior without
 pretending that a manual fixture came from a model. The production rewriter
 will sit behind the same provider-independent interface.
+
+### 2026-07-29 — Captioned composition boundary
+
+Decision: Implement composition as a Toluva Genblaze `SyncProvider` receiving
+source video, selected localized audio, and WebVTT captions as three explicit
+inputs.
+
+Reason: Genblaze's built-in compositor handles video and audio but not captions.
+The Toluva provider preserves meaningful Genblaze fan-in and canonical
+provenance while keeping FFmpeg composition deterministic and independently
+testable.
+
+### 2026-07-29 — Caption delivery format
+
+Decision: Store WebVTT as the durable sidecar and embed captions in MP4 as a
+`mov_text` track.
+
+Reason: The current worker FFmpeg build lacks the `libass` subtitle filter, so
+burning captions would add an unstable runtime/font dependency. The sidecar is
+browser-friendly and inspectable, while the MP4 track keeps captions packaged
+with the asset. The final UI must explicitly attach the WebVTT track.
+
+### 2026-07-29 — Composition fixture honesty
+
+Decision: Use a deterministic Toluva-colored source and human-reviewed timed
+transcript only for the engine spike, and label both as fixtures.
+
+Reason: This validates segmentation, captions, composition, B2 lifecycle, and
+Genblaze fan-in without inventing a transcription-provider result or claiming
+the fixture as the entrant-owned final demo video.
 
 ## 22. Official References
 

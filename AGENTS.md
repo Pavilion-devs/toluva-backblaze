@@ -211,6 +211,22 @@ allowed-root configuration. The current sink rejects project-local
 attempt and a sanitized failure record, then retry from an accepted path. See
 `docs/genblaze-feedback-allowed-output-root.md`.
 
+The verified composition contract is:
+
+- A Toluva `SyncProvider` owns FFmpeg composition inside a Genblaze pipeline.
+- The composition step receives three explicit external inputs: source video,
+  selected localized audio, and `text/vtt` captions.
+- The final MP4 preserves captions as a `mov_text` track, while the WebVTT
+  sidecar remains independently accessible in B2.
+- Small underlength gaps are silence-padded to the source slot. Never stretch a
+  green speech attempt merely to fill the container.
+- Store the generated MP4 and canonical composition manifest through the
+  Genblaze sink, then independently download and hash the final bytes.
+- Direct B2 records may link source, captions, disclosure, and final output,
+  but durable records must never contain local filesystem paths.
+- The current source video and timed transcript are labelled fixtures. Do not
+  present them as live transcription or the final licensed demo sample.
+
 ### The app must fail honestly
 
 - A failed provider call must produce a visible failed/retryable state.

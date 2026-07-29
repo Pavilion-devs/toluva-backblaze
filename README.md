@@ -38,6 +38,12 @@ Backblaze B2.
 - Separate Genblaze manifests, verified audio hashes, parent/child run lineage,
   translation revisions, QA records, and deterministic spend guards for every
   correction attempt
+- Validated timed-transcript and segmentation records with deterministic
+  WebVTT caption generation
+- A real Genblaze composition fan-in over source video, the selected localized
+  audio, and captions
+- A verified 3.8-second H.264/AAC/`mov_text` MP4, B2-backed caption sidecar,
+  synthetic-media disclosure, and final publication record
 - A FastAPI boundary for health, authorization, timing, and local spike runs
 
 ## Run locally
@@ -74,6 +80,9 @@ See `services/pipeline/README.md` for the API and credential-readiness commands.
   environment; they are absent from tracked files.
 - The first live worker path runs locally and is not connected to the hosted UI
   yet.
+- The current composed source video and transcript are clearly labelled
+  deterministic fixtures; live transcription and the entrant-owned final
+  sample remain next.
 - The timing thresholds remain configurable product defaults; the first live
   red-to-green German sample has now validated the complete correction path.
 - Toluva is evidence-ready and compliance-supporting; it does not guarantee

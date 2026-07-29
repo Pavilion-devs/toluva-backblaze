@@ -40,6 +40,11 @@ def test_timing_and_speech_prefixes_are_attempt_scoped() -> None:
     assert keys.timing_summary(scope, "segment-01").endswith(
         "/qa/segment-01/summary.json"
     )
+    assert keys.captions(scope, "v2").endswith("/captions/v2.vtt")
+    assert keys.composition_genblaze_prefix(scope, "v2").endswith(
+        "/composition/v2/genblaze"
+    )
+    assert keys.final_record(scope, "v2").endswith("/final/v2.json")
 
 
 @pytest.mark.parametrize("unsafe_id", ["../escape", "space here", "", "/root"])

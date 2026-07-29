@@ -8,6 +8,7 @@ from importlib.metadata import version
 from pathlib import Path
 from shutil import which
 
+from toluva_pipeline.live_composition import run_live_composition
 from toluva_pipeline.live_timing_correction import (
     LIVE_JOB_ID,
     run_live_timing_correction,
@@ -56,6 +57,17 @@ def main() -> None:
         default=LIVE_JOB_ID,
         help="Stable job ID; an existing B2 record blocks duplicate generation.",
     )
+    composition = subparsers.add_parser("compose-live-slice")
+    composition.add_argument(
+        "--confirm-write",
+        action="store_true",
+        help="Required acknowledgement that this command writes durable B2 records.",
+    )
+    composition.add_argument(
+        "--job-id",
+        default=LIVE_JOB_ID,
+        help="Stable job ID containing the verified timing-correction result.",
+    )
     args = parser.parse_args()
 
     if args.command == "readiness":
@@ -69,10 +81,17 @@ def main() -> None:
         if not args.confirm_spend:
             parser.error("live-tts-spike requires --confirm-spend")
         result = run_live_tts_spike(Settings.from_env()).to_dict()
-    else:
+    elif args.command == "live-timing-correction":
         if not args.confirm_spend:
             parser.error("live-timing-correction requires --confirm-spend")
         result = run_live_timing_correction(
+            Settings.from_env(),
+            job_id=args.job_id,
+        ).to_dict()
+    else:
+        if not args.confirm_write:
+            parser.error("compose-live-slice requires --confirm-write")
+        result = run_live_composition(
             Settings.from_env(),
             job_id=args.job_id,
         ).to_dict()

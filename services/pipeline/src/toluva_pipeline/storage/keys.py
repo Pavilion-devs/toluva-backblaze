@@ -70,6 +70,9 @@ class ToluvaObjectKeys:
     def transcript(self, version: str = "v1") -> str:
         return f"{self.root}/source/transcript/{_opaque_id(version, 'version')}.json"
 
+    def segments(self, version: str = "v1") -> str:
+        return f"{self.root}/source/segments/{_opaque_id(version, 'version')}.json"
+
     def authorization_record(self, authorization_id: str) -> str:
         authorization_id = _opaque_id(authorization_id, "authorization_id")
         return f"{self.root}/authorizations/{authorization_id}/record.json"
@@ -145,6 +148,36 @@ class ToluvaObjectKeys:
         return (
             f"{scope.job_prefix}/qa/"
             f"{_opaque_id(segment_id, 'segment_id')}/summary.json"
+        )
+
+    def captions(
+        self,
+        scope: StorageScope,
+        version: str = "v1",
+        extension: str = "vtt",
+    ) -> str:
+        self._assert_scope(scope)
+        return (
+            f"{scope.job_prefix}/captions/"
+            f"{_opaque_id(version, 'version')}.{_extension(extension)}"
+        )
+
+    def composition_genblaze_prefix(
+        self,
+        scope: StorageScope,
+        version: str = "v1",
+    ) -> str:
+        self._assert_scope(scope)
+        return (
+            f"{scope.job_prefix}/composition/"
+            f"{_opaque_id(version, 'version')}/genblaze"
+        )
+
+    def final_record(self, scope: StorageScope, version: str = "v1") -> str:
+        self._assert_scope(scope)
+        return (
+            f"{scope.job_prefix}/final/"
+            f"{_opaque_id(version, 'version')}.json"
         )
 
     def attempt_failure(
