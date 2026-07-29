@@ -1,7 +1,7 @@
 # Toluva — Product, Architecture, and Win Plan
 
 Last updated: July 29, 2026  
-Status: Fixture-free German engine verified; hosted UI connection next
+Status: Verified German engine connected to hosted UI; final licensed sample and write-path worker next
 Submission deadline: August 3, 2026 at 10:00 p.m. WAT  
 Internal submission target: August 3, 2026 at 6:00 p.m. WAT
 
@@ -675,9 +675,9 @@ The user sees:
 - [x] Final media composition
 - [x] B2 storage for intermediates and finals
 - [x] Genblaze manifests/lineage
-- [ ] Job and segment status UI
-- [ ] Source/final playback comparison
-- [ ] Provenance/disclosure inspector
+- [x] Job and segment status UI
+- [x] Source/final playback comparison
+- [x] Provenance/disclosure inspector
 - [ ] Human approval state
 - [ ] Judge access without setup friction
 
@@ -871,6 +871,27 @@ Fixture-free English-to-German slice completed:
   `611924ce72726f686ead5cc71ccd131bf85d0a58ba5518605ebccfdc9e52ef2b`.
 - A replay of the completed job returned from B2 in approximately 1.3 seconds
   without calling Whisper, Argos, ElevenLabs, or FFmpeg again.
+
+Hosted engine view completed:
+
+- Replaced the fictional leadership-training dashboard records with the genuine
+  `english-to-german-v4` B2 run.
+- Added a server-only Backblaze Native API reader that validates bucket,
+  `readFiles` capability, and the `projects/` key restriction before returning
+  any data.
+- Added an exact-project object allowlist and immutable-final-record resolution
+  for source, localized MP4, captions, and speech media.
+- Added range-capable private MP4 proxying. Local production-runtime checks
+  returned HTTP 206 for both source and final video byte ranges and served the
+  WebVTT sidecar.
+- The hosted view now shows the real Whisper transcript, Argos translation,
+  protected-term decision, German-only authorization scope, 3.529433-second
+  speech duration, -11.764175% amber drift, silence-padding decision, 16
+  job-scoped B2 objects, and four actual Genblaze manifests.
+- Added a completed-job replay control that reloads the final B2 checkpoint
+  without invoking Whisper, Argos, ElevenLabs, or FFmpeg.
+- Added an honest `LIVE B2 RUN` versus `VERIFIED SNAPSHOT` state. Missing B2
+  credentials fail closed and never expose a secret or invent a live response.
 
 ## 16. Delivery Schedule
 
@@ -1326,6 +1347,36 @@ Reason: The source enables genuine transcription, translation, TTS, timing,
 captions, and composition before the final rights-cleared recording is chosen.
 Calling it a development sample preserves evidence quality without inventing
 rights or presenting a synthetic test clip as the final judge-facing media.
+
+### 2026-07-29 — Hosted B2 read boundary
+
+Decision: Connect the Sites-hosted product to Backblaze through a server-only
+Native API reader using a read-capable, prefix-scoped B2 application key stored
+as encrypted runtime secrets.
+
+Reason: Judges need to inspect the actual B2-backed job and play its private
+media, while storage credentials must never enter the browser. The hosted
+boundary is read-only; Genblaze and billable generation remain in the Python
+worker.
+
+### 2026-07-29 — Private media resolution
+
+Decision: The browser may request only the named media kinds `source`, `final`,
+`captions`, and `speech`. Server code resolves their B2 keys from the immutable
+final record and rejects arbitrary object paths.
+
+Reason: This preserves seekable playback through HTTP byte ranges without
+turning the web endpoint into a general B2 proxy.
+
+### 2026-07-29 — Verified snapshot fallback
+
+Decision: Server-render the last independently verified run snapshot, then
+replace it with sanitized live B2 records after a successful connection. Show
+the active source explicitly as `LIVE B2 RUN` or `VERIFIED SNAPSHOT`.
+
+Reason: A temporary storage read failure should not erase inspectable evidence,
+but cached evidence must never be misrepresented as a live provider or storage
+response.
 
 ## 22. Official References
 

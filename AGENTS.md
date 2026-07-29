@@ -165,7 +165,14 @@ The current execution boundary is deliberate:
 - The Sites-hosted Next.js/Vinext app is the user experience.
 - The Python 3.12 FastAPI service under `services/pipeline` owns Genblaze and
   long-running media work.
-- Never move B2 or provider credentials into the browser or the Sites runtime.
+- Never move B2 or provider credentials into the browser.
+- The Sites server runtime may hold a read-capable B2 application key only when
+  it is stored as encrypted runtime secrets, restricted to the `projects/`
+  prefix, and used behind the allowlisted server bridge. Do not put
+  ElevenLabs or generation-provider credentials in Sites.
+- The hosted bridge is an observability and private-media boundary. It may read
+  verified records, count job objects, proxy byte ranges, and replay completed
+  state. It must not execute the Python generation pipeline.
 - The first verified package pins are `genblaze-core==0.3.8`,
   `genblaze-s3==0.3.6`, and `genblaze-elevenlabs==0.3.3`. Upgrade them only
   through an explicit provider spike and update `plan.md`.
@@ -204,6 +211,19 @@ records that are outside generated pipeline outputs, but it must be documented.
 
 Use deterministic, human-inspectable object keys. Never expose long-lived B2
 credentials to the browser.
+
+The hosted read contract is:
+
+- Authorize with the Backblaze Native API only in server code.
+- Validate that the key has `readFiles`, the expected bucket, and a prefix that
+  covers `projects/live-localization-project/`.
+- Reject any object key outside that exact verified project.
+- Resolve source, final, caption, and speech media from the immutable final
+  record instead of accepting arbitrary browser-supplied keys.
+- Preserve `Range`, `Content-Range`, and media content types through the proxy
+  so private MP4 playback remains seekable.
+- Return sanitized errors and fall back visibly to a verified record snapshot;
+  never label the snapshot as a live B2 response.
 
 The current Genblaze Backblaze adapter uses `B2_REGION` to derive its endpoint.
 Keep generated sinks scoped beneath the project/job/language prefix, use the

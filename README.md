@@ -6,12 +6,12 @@ communications teams.
 > One source. Multiple languages. Every voice authorized, every segment
 > time-fit, and every output verifiable.
 
-This repository contains the interactive product scaffold and a verified live
-pipeline foundation. The UI still uses prepared demonstration data, while the
-Python service now ingests source media, performs timed transcription and
-protected-term translation, enforces voice authorization, evaluates timing
-drift, calls ElevenLabs through Genblaze, and stores verified media and
-provenance in Backblaze B2.
+This repository contains an interactive product view connected to a verified
+live pipeline. The hosted dashboard reads the completed English-to-German run
+from Backblaze B2 through a server-only bridge, while the Python service ingests
+source media, performs timed transcription and protected-term translation,
+enforces voice authorization, evaluates timing drift, calls ElevenLabs through
+Genblaze, and stores verified media and provenance in B2.
 
 ## What is implemented
 
@@ -52,6 +52,13 @@ provenance in Backblaze B2.
   block ambiguous retries before they can duplicate provider spend
 - A verified 4.0-second H.264/AAC/`mov_text` German output whose four
   transcription, translation, speech, and composition manifests all validate
+- A server-only Backblaze Native API bridge that exposes only sanitized records
+  and an allowlisted, range-capable source/final/caption media proxy
+- A dashboard driven by the genuine German transcript, Argos translation,
+  authorization scope, timing measurement, B2 object count, and four Genblaze
+  manifests
+- Source/final playback with WebVTT captions, completed-job replay from B2,
+  and an honest verified-snapshot fallback when the live read is unavailable
 - A FastAPI boundary for health, authorization, timing, and local spike runs
 
 ## Run locally
@@ -81,13 +88,16 @@ See `services/pipeline/README.md` for the API and credential-readiness commands.
 
 ## Current boundaries
 
-- The dashboard is interactive, but its media/run records remain clearly
-  labelled prepared demo data.
-- The browser never receives provider or storage credentials.
-- B2 and ElevenLabs credentials are configured only in the ignored local
-  environment; they are absent from tracked files.
-- The first live worker path runs locally and is not connected to the hosted UI
-  yet.
+- The dashboard reads the real `english-to-german-v4` records and private media
+  from B2. A visible connection badge distinguishes live B2 data from the last
+  verified snapshot.
+- The browser never receives provider or storage credentials. The hosted
+  server-only bridge receives a read-capable, project-prefix-scoped B2 key as
+  encrypted runtime secrets; ElevenLabs remains worker-only.
+- Credential values are absent from tracked files.
+- The Python generation worker still runs separately from the hosted web app.
+  The UI can inspect and replay the completed B2 job without a model call, but
+  it cannot yet launch a new long-running localization job.
 - The new transcript and German translation are genuine model outputs, not
   scripted fixtures. The source video is a clearly labelled, locally generated
   development sample; an entrant-owned or licensed final demo video is still
