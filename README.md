@@ -68,6 +68,9 @@ Genblaze, and stores verified media and provenance in B2.
   interruption recovery, bounded polling backoff, and graceful shutdown
 - A reproducible non-root Linux worker image with pinned CPU-only Python
   dependencies, FFmpeg, Faster Whisper, and Argos model hashes
+- An always-on, isolated VPS deployment of that exact image with no inbound
+  port, a 1.5-CPU ceiling, a 2 GB memory ceiling, dropped capabilities, bounded
+  logs, root-only credentials, and systemd restart supervision
 - An honest dashboard worker indicator that shows online, busy, checking, or
   queue-only state without exposing infrastructure credentials
 - Refresh-safe job polling and completed-job playback resolved from the new
@@ -97,6 +100,8 @@ PYTHONPATH=services/pipeline/src \
 ```
 
 See `services/pipeline/README.md` for the API and credential-readiness commands.
+See `deploy/vps/README.md` for the isolated worker deployment and rollback
+contract.
 
 ## Current boundaries
 
@@ -109,9 +114,10 @@ See `services/pipeline/README.md` for the API and credential-readiness commands.
 - Credential values are absent from tracked files.
 - The Python generation worker still runs separately from the hosted web app.
   The UI launches a durable B2 job, displays its live status and completed
-  media, and reads a finite worker lease. The production worker runtime and
-  pinned image are implemented; an always-on external Python host remains
-  required for unattended public execution.
+  media, and reads a finite worker lease. The production worker is deployed as
+  exactly one isolated, continuously polling container on the selected VPS.
+  B2 remains the durable queue and the web app has no generation-provider
+  credential.
 - The new transcript and German translation are genuine model outputs, not
   scripted fixtures. The source video is a clearly labelled, locally generated
   development sample; an entrant-owned or licensed final demo video is still

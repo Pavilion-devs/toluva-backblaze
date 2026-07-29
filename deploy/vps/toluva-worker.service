@@ -1,0 +1,45 @@
+[Unit]
+Description=Toluva B2 queue worker
+Documentation=https://github.com/backblaze-labs/genblaze
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=10
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=15
+TimeoutStartSec=90
+TimeoutStopSec=135
+
+# The container is intentionally replaceable. Durable requests, checkpoints,
+# status events, media, and manifests live in Backblaze B2.
+ExecStartPre=-/usr/bin/docker rm --force toluva-worker
+ExecStart=/usr/bin/docker run \
+  --name toluva-worker \
+  --pull=never \
+  --env-file=/etc/toluva/worker.env \
+  --cpus=1.50 \
+  --cpu-shares=768 \
+  --memory=2000m \
+  --memory-swap=2000m \
+  --oom-score-adj=500 \
+  --pids-limit=256 \
+  --ulimit=nofile=4096:4096 \
+  --cap-drop=ALL \
+  --security-opt=no-new-privileges:true \
+  --user=10001:10001 \
+  --tmpfs=/tmp:rw,nosuid,nodev,size=768m \
+  --stop-timeout=120 \
+  --log-driver=json-file \
+  --log-opt=max-size=25m \
+  --log-opt=max-file=3 \
+  --label=com.toluva.role=queue-worker \
+  --label=com.toluva.replica-count=1 \
+  toluva-worker:8cf07b9
+ExecStop=-/usr/bin/docker stop --time=120 toluva-worker
+
+[Install]
+WantedBy=multi-user.target

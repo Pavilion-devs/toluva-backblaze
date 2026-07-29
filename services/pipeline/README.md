@@ -309,13 +309,18 @@ docker run --rm \
   -m toluva_pipeline.worker --check
 ```
 
-The recommended deployment target is a one-instance Cloud Run worker pool
-because worker pools are designed for continuous pull-based work and do not
-require an HTTP listener. That host is continuously billed while its instance
-runs, so it is a deliberate budget/account decision rather than something the
-application silently creates. No always-on external worker host is configured
-yet. Until one is selected, the hosted app honestly leaves new requests queued
-when the operator-run worker is offline.
+The production deployment uses exactly one isolated VPS container managed by
+systemd. The container exposes no port: it polls the B2 queue and calls B2 and
+ElevenLabs over outbound HTTPS. It is limited to 1.5 CPUs, 2,000 MB RAM, and
+256 processes, runs as UID/GID 10001 with all Linux capabilities dropped, and
+stores its root-only environment at `/etc/toluva/worker.env`. See
+`deploy/vps/README.md`.
+
+The deployed service uses the immutable tag `toluva-worker:8cf07b9`. Its remote
+image ID matches the verified local image ID, its container health is green,
+its restart count is zero, and the hosted dashboard consumes its current
+one-replica B2 heartbeat as `WORKER ONLINE`. No reverse proxy, DNS record,
+forwarded port, or public worker endpoint is required.
 
 The verified local `linux/amd64` build has OCI digest
 `sha256:41e238e088f63c0293667143c8ac8d2ba700ca9c105a6ae8558e4b3b18f620b8`

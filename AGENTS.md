@@ -314,6 +314,14 @@ The persistent worker contract is:
   the explicit CPU-only PyTorch source, model revisions, model hashes, and the
   non-root runtime pinned. Do not allow Linux resolution to reintroduce CUDA
   packages unless the architecture deliberately moves to GPU execution.
+- The production worker is the one systemd-managed `toluva-worker` container on
+  the selected VPS. It exposes no port and is capped at 1.5 CPUs, 2,000 MB RAM,
+  and 256 processes. Preserve the controls in `deploy/vps/`.
+- That VPS also runs an unrelated Dara API and Cloudflare tunnel. Never edit,
+  restart, stop, inspect secrets from, or reuse paths and ports owned by those
+  services. Do not reinstall/remove Docker or reboot the host. Toluva owns only
+  its image, `/etc/toluva/worker.env`, `toluva-worker.service`, and its named
+  container.
 - Do not describe uploads as automatically processing unless the heartbeat
   lease is currently valid. Offline uploads remain queued.
 

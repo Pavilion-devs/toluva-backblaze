@@ -1,7 +1,7 @@
 # Toluva — Product, Architecture, and Win Plan
 
 Last updated: July 29, 2026  
-Status: persistent worker runtime and pinned image implemented; external worker host and final licensed sample next
+Status: persistent worker deployed on an isolated VPS; final licensed sample next
 Submission deadline: August 3, 2026 at 10:00 p.m. WAT  
 Internal submission target: August 3, 2026 at 6:00 p.m. WAT
 
@@ -952,10 +952,32 @@ Durable upload and queue slice completed:
 - Published an actual idle heartbeat through the configured B2 path without
   invoking a provider. Its lease expired as designed when the operator-run
   process exited.
-- The worker runtime and container are production-shaped but no always-on
-  external host is configured yet. A one-instance Cloud Run worker pool is the
-  recommended target, subject to an explicit cloud account and continuous
-  runtime budget decision.
+- Deployed the exact verified worker image as one isolated, always-on VPS
+  container managed by systemd. It exposes no port and is capped at 1.5 CPUs,
+  2,000 MB RAM, 256 processes, and three 25 MB log files.
+- The deployed image ID matches
+  `sha256:41e238e088f63c0293667143c8ac8d2ba700ca9c105a6ae8558e4b3b18f620b8`.
+  It runs as UID/GID 10001 with all capabilities dropped and
+  `no-new-privileges`.
+- The root-only worker environment is mode `0600` and contains only the scoped
+  B2 credential, ElevenLabs key, and fixed worker settings. The worker has no
+  web, reverse-proxy, DNS, or inbound-firewall dependency.
+- Remote readiness passed, the container reached `running healthy` with zero
+  restarts, and settled idle consumption measured approximately 66 MB RAM and
+  0.01% CPU.
+- B2 reported a current `queue-v1`, one-replica, idle lease. The hosted
+  dashboard independently rendered `WORKER ONLINE` and `LIVE B2 RUN`.
+- The worker was started while the B2 queue was empty, preventing an unexpected
+  provider call or inference burst during deployment.
+- The VPS already hosted an unrelated Dara API and Cloudflare tunnel. Toluva
+  did not edit their unit files, paths, ports, reverse proxy, DNS, or secrets.
+  Their unit hashes remained unchanged, and their process IDs stayed unchanged
+  throughout the actual Toluva service start and final health verification.
+- Ubuntu's one-time Docker package installation did trigger a brief managed
+  restart of those pre-existing services. They recovered healthy immediately.
+  Additional orderly restarts occurred while separate Dara regeneration
+  traffic was active; kernel logs showed no OOM. Future Toluva operations must
+  not reinstall Docker, reboot the host, or touch those units.
 
 ## 16. Delivery Schedule
 
@@ -1182,9 +1204,10 @@ Resolve during scaffolding or the first spike:
 - [ ] Metadata database
 - [x] Job queue/worker approach — append-only Backblaze B2 queue and Python
       consumer
-- [x] Worker hosting architecture — exactly one continuously polling container;
-      Cloud Run worker pool is the recommended target
-- [ ] Worker hosting account/deployment; web hosting is locked to OpenAI Sites
+- [x] Worker hosting architecture — exactly one continuously polling,
+      no-inbound-port container managed by systemd on the selected VPS
+- [x] Worker hosting account/deployment — isolated TierHive VPS service; web
+      hosting remains locked to OpenAI Sites
 - [x] Transcription provider/model — local Faster Whisper 1.2.1 with
       `Systran/faster-whisper-base.en` revision
       `88b03866a4066bb4a97c12258abb82b1e9af0121`
@@ -1520,15 +1543,36 @@ several gigabytes of unused NVIDIA/CUDA packages.
 
 ### 2026-07-29 — External worker hosting target
 
-Decision: Prefer a one-instance Cloud Run worker pool for the persistent
-container, but do not create or claim an always-on deployment until a Google
-Cloud account, region, billing project, and continuous-runtime budget are
-explicitly selected.
+Decision: Cloud Run was the initial preference, but it was not activated because
+the selected Google Cloud billing account was unavailable.
 
 Reason: Worker pools are designed for continuous pull-based work without an
 HTTP listener and default to one instance, matching Toluva's queue contract.
 They are billed continuously while running, so activation is an external
 operating-cost decision rather than an implicit application change.
+
+### 2026-07-29 — Isolated VPS worker deployment
+
+Decision: Deploy the verified `linux/amd64` image as exactly one systemd-managed
+container on the selected TierHive VPS. Do not expose a port. Cap it at 1.5
+CPUs, 2,000 MB RAM, and 256 processes; drop all Linux capabilities; enable
+`no-new-privileges`; keep credentials root-only; and let B2 remain the durable
+queue, checkpoint store, heartbeat channel, and media system of record.
+
+Reason: The selected VPS provides 2 vCPU, 3 GB RAM, and 25 GB NVMe and is
+already funded through the judging period. The exact Whisper-plus-Argos process
+passed under a 2 GB hard memory ceiling. Idle worker use is small, no inbound
+networking is required, and the existing web host already reads the finite B2
+lease. This creates a warm, judge-independent worker without a new cloud
+billing account.
+
+Operational boundary: the VPS also runs an unrelated Dara API and Cloudflare
+tunnel. Toluva owns only its image, `/etc/toluva/worker.env`,
+`toluva-worker.service`, and its one container. It must never edit or restart
+the Dara units, reuse port 8000, change their tunnel, or trigger a host reboot.
+The one-time Docker package install caused a brief managed restart before the
+Toluva service existed; subsequent worker startup preserved the existing
+process IDs and unit hashes.
 
 ## 22. Official References
 
