@@ -8,9 +8,10 @@ communications teams.
 
 This repository contains the interactive product scaffold and a verified live
 pipeline foundation. The UI still uses prepared demonstration data, while the
-Python service now enforces voice authorization, evaluates timing drift, calls
-ElevenLabs through Genblaze, and stores verified media and provenance in
-Backblaze B2.
+Python service now ingests source media, performs timed transcription and
+protected-term translation, enforces voice authorization, evaluates timing
+drift, calls ElevenLabs through Genblaze, and stores verified media and
+provenance in Backblaze B2.
 
 ## What is implemented
 
@@ -44,6 +45,13 @@ Backblaze B2.
   audio, and captions
 - A verified 3.8-second H.264/AAC/`mov_text` MP4, B2-backed caption sidecar,
   synthetic-media disclosure, and final publication record
+- A fixture-free English-to-German development slice: real local Whisper
+  word timestamps, real offline neural translation, one live ElevenLabs speech
+  attempt, timing QA, WebVTT captions, and a verified Genblaze composition
+- B2-backed provider intents and completions that reuse finished stages and
+  block ambiguous retries before they can duplicate provider spend
+- A verified 4.0-second H.264/AAC/`mov_text` German output whose four
+  transcription, translation, speech, and composition manifests all validate
 - A FastAPI boundary for health, authorization, timing, and local spike runs
 
 ## Run locally
@@ -80,9 +88,10 @@ See `services/pipeline/README.md` for the API and credential-readiness commands.
   environment; they are absent from tracked files.
 - The first live worker path runs locally and is not connected to the hosted UI
   yet.
-- The current composed source video and transcript are clearly labelled
-  deterministic fixtures; live transcription and the entrant-owned final
-  sample remain next.
+- The new transcript and German translation are genuine model outputs, not
+  scripted fixtures. The source video is a clearly labelled, locally generated
+  development sample; an entrant-owned or licensed final demo video is still
+  required.
 - The timing thresholds remain configurable product defaults; the first live
   red-to-green German sample has now validated the complete correction path.
 - Toluva is evidence-ready and compliance-supporting; it does not guarantee

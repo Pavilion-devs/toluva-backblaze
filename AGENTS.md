@@ -169,6 +169,17 @@ The current execution boundary is deliberate:
 - The first verified package pins are `genblaze-core==0.3.8`,
   `genblaze-s3==0.3.6`, and `genblaze-elevenlabs==0.3.3`. Upgrade them only
   through an explicit provider spike and update `plan.md`.
+- The verified live transcription path is `faster-whisper==1.2.1` with
+  `Systran/faster-whisper-base.en` pinned at revision
+  `88b03866a4066bb4a97c12258abb82b1e9af0121`. The model runs locally through
+  a Toluva Genblaze `SyncProvider` and records its weights hash in the
+  manifest.
+- The verified translation path is `argostranslate==1.11.0` with the
+  English-to-German package `1.3`, invoked through a Toluva Genblaze
+  `SyncProvider`. Protected terms are checked before any TTS call.
+- An ElevenLabs Scribe adapter remains available, but the configured key
+  returned HTTP 401 for STT while continuing to work for TTS. Preserve that
+  failure record and do not retry Scribe under the current key.
 
 ### Backblaze B2 must be the system of record
 
@@ -225,7 +236,25 @@ The verified composition contract is:
 - Direct B2 records may link source, captions, disclosure, and final output,
   but durable records must never contain local filesystem paths.
 - The current source video and timed transcript are labelled fixtures. Do not
-  present them as live transcription or the final licensed demo sample.
+  present the older composition proof as live transcription or the final
+  licensed demo sample.
+- The `english-to-german-v4` source is a real speech-bearing, locally generated
+  development sample. Its Whisper transcript and Argos translation are genuine
+  model outputs, not scripted fixtures. It is still not the final
+  entrant-owned or licensed demo video.
+
+The verified fixture-free execution contract is:
+
+- Write a B2 stage intent before each billable or expensive provider stage.
+- Reuse a completed B2 checkpoint without calling the provider again.
+- If an intent exists without completion, block automatic replay because the
+  upstream request may have spent credits.
+- Run source ingest, timed transcription, protected-term translation, voice
+  authorization, TTS timing QA, captions, and three-input composition as
+  inspectable stages.
+- Keep transcription, translation, speech, and composition as four separately
+  verifiable Genblaze manifests.
+- Independently re-hash the final B2 object before reporting success.
 
 ### The app must fail honestly
 

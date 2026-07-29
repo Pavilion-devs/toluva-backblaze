@@ -8,6 +8,7 @@ from importlib.metadata import version
 from pathlib import Path
 from shutil import which
 
+from toluva_pipeline.live_end_to_end import E2E_JOB_ID, run_live_end_to_end
 from toluva_pipeline.live_composition import run_live_composition
 from toluva_pipeline.live_timing_correction import (
     LIVE_JOB_ID,
@@ -20,8 +21,11 @@ from toluva_pipeline.settings import Settings
 
 def _readiness() -> dict[str, object]:
     settings = Settings.from_env()
+    model_root = settings.work_dir / "models"
     return {
         "versions": {
+            "argostranslate": version("argostranslate"),
+            "faster-whisper": version("faster-whisper"),
             "genblaze-core": version("genblaze-core"),
             "genblaze-s3": version("genblaze-s3"),
             "genblaze-elevenlabs": version("genblaze-elevenlabs"),
@@ -29,6 +33,19 @@ def _readiness() -> dict[str, object]:
         "media_tools": {
             "ffmpeg": which("ffmpeg") is not None,
             "ffprobe": which("ffprobe") is not None,
+        },
+        "local_models": {
+            "argos-en-de-1.3": (
+                model_root
+                / "argos"
+                / "packages"
+                / "translate-en_de-1_3"
+                / "model"
+                / "model.bin"
+            ).is_file(),
+            "whisper-base-en": (
+                model_root / "whisper" / "base-en" / "model.bin"
+            ).is_file(),
         },
         "credentials": settings.readiness(),
     }
@@ -68,6 +85,20 @@ def main() -> None:
         default=LIVE_JOB_ID,
         help="Stable job ID containing the verified timing-correction result.",
     )
+    end_to_end = subparsers.add_parser("live-end-to-end")
+    end_to_end.add_argument(
+        "--confirm-spend",
+        action="store_true",
+        help=(
+            "Required acknowledgement that transcription and speech generation "
+            "spend provider credits."
+        ),
+    )
+    end_to_end.add_argument(
+        "--job-id",
+        default=E2E_JOB_ID,
+        help="Stable job ID; completed stages are safely reused.",
+    )
     args = parser.parse_args()
 
     if args.command == "readiness":
@@ -88,10 +119,17 @@ def main() -> None:
             Settings.from_env(),
             job_id=args.job_id,
         ).to_dict()
-    else:
+    elif args.command == "compose-live-slice":
         if not args.confirm_write:
             parser.error("compose-live-slice requires --confirm-write")
         result = run_live_composition(
+            Settings.from_env(),
+            job_id=args.job_id,
+        ).to_dict()
+    else:
+        if not args.confirm_spend:
+            parser.error("live-end-to-end requires --confirm-spend")
+        result = run_live_end_to_end(
             Settings.from_env(),
             job_id=args.job_id,
         ).to_dict()

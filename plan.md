@@ -1,7 +1,7 @@
 # Toluva — Product, Architecture, and Win Plan
 
 Last updated: July 29, 2026  
-Status: Captioned Genblaze composition verified; live STT/translation next
+Status: Fixture-free German engine verified; hosted UI connection next
 Submission deadline: August 3, 2026 at 10:00 p.m. WAT  
 Internal submission target: August 3, 2026 at 6:00 p.m. WAT
 
@@ -658,15 +658,15 @@ The user sees:
 
 - [x] Stable hosted web application
 - [ ] Preloaded judge-friendly sample
-- [ ] Source-video upload or ingest
+- [x] Source-video upload or ingest
 - [x] B2 source storage
-- [ ] Timed transcription
+- [x] Timed transcription
 - [x] Segmentation
 - [x] Voice-authorization record
 - [x] Pre-generation authorization gate
 - [ ] Target-language selection
 - [x] Protected terminology
-- [ ] Translation
+- [x] Translation
 - [x] Genblaze TTS generation
 - [x] Actual duration measurement
 - [x] Drift classification
@@ -751,7 +751,7 @@ Completed without provider credentials:
   canonical manifest, verified the manifest, and independently matched the
   declared asset SHA-256 to the referenced file bytes.
 - Added a FastAPI service boundary and secret-safe readiness endpoint.
-- Locked the Python dependency graph and passed 63 service tests.
+- Locked the Python dependency graph and passed 74 service tests.
 
 Live portion completed:
 
@@ -837,6 +837,40 @@ Captioned composition completed:
 - The fixture proves the ingest-record, caption, fan-in, composition, and final
   storage engine. It is not represented as live STT or the final licensed demo
   source.
+
+Fixture-free English-to-German slice completed:
+
+- Created and ingested a real speech-bearing four-second development MP4. The
+  locally generated source is labelled as a development sample, not the final
+  entrant-owned or licensed demo asset.
+- Added an ElevenLabs Scribe v2 Genblaze provider, recorded a real HTTP 401
+  authorization failure from the current TTS-scoped key, and blocked automatic
+  replay through a durable B2 provider intent.
+- Switched the verified transcription path to `faster-whisper==1.2.1` with
+  `Systran/faster-whisper-base.en` pinned at revision
+  `88b03866a4066bb4a97c12258abb82b1e9af0121`.
+- Wrapped local Whisper in a Toluva Genblaze `SyncProvider`, stored its
+  timestamped JSON output and canonical manifest in B2, and recorded the model
+  revision and model-weights hash.
+- Whisper transcribed: “Welcome to Toluva, One Message, Many Languages.” The
+  product name was supplied as a recognition keyterm and preserved exactly.
+- Added `argostranslate==1.11.0` with the English-to-German model package `1.3`
+  behind a Toluva Genblaze `SyncProvider`.
+- The live model translated the segment to “Willkommen bei Toluva, eine
+  Botschaft, viele Sprachen.” and passed protected-term validation.
+- Voice authorization passed before the one billable TTS call. ElevenLabs
+  generated 54 characters and 3.529433 seconds of German speech for a
+  4.0-second slot.
+- Toluva measured -11.764175% timing drift, classified it amber, and selected
+  natural silence padding without stretching the voice.
+- Genblaze composed an exact 4.0-second H.264/AAC/`mov_text` MP4 from source
+  video, selected German audio, and WebVTT captions.
+- The completed job contains 16 job-scoped B2 objects. The transcription,
+  translation, speech, and composition manifests all verify.
+- The downloaded final B2 object matched SHA-256
+  `611924ce72726f686ead5cc71ccd131bf85d0a58ba5518605ebccfdc9e52ef2b`.
+- A replay of the completed job returned from B2 in approximately 1.3 seconds
+  without calling Whisper, Argos, ElevenLabs, or FFmpeg again.
 
 ## 16. Delivery Schedule
 
@@ -1063,9 +1097,13 @@ Resolve during scaffolding or the first spike:
 - [ ] Metadata database
 - [ ] Job queue/worker approach
 - [ ] Worker hosting target; web hosting is locked to OpenAI Sites
-- [ ] Transcription provider/model
-- [ ] Translation provider/model
-- [ ] Primary TTS provider/model
+- [x] Transcription provider/model — local Faster Whisper 1.2.1 with
+      `Systran/faster-whisper-base.en` revision
+      `88b03866a4066bb4a97c12258abb82b1e9af0121`
+- [x] Translation provider/model — Argos Translate 1.11.0 with
+      `translate-en_de` package 1.3
+- [x] Primary TTS provider/model — ElevenLabs through Genblaze using
+      `eleven_flash_v2_5` and the verified stock voice
 - [ ] Fallback TTS provider/model
 - [ ] Voice type used in the demo
 - [ ] Paid TTS plan
@@ -1243,6 +1281,51 @@ transcript only for the engine spike, and label both as fixtures.
 Reason: This validates segmentation, captions, composition, B2 lifecycle, and
 Genblaze fan-in without inventing a transcription-provider result or claiming
 the fixture as the entrant-owned final demo video.
+
+### 2026-07-29 — Live transcription provider
+
+Decision: Use `faster-whisper==1.2.1` with
+`Systran/faster-whisper-base.en` pinned at revision
+`88b03866a4066bb4a97c12258abb82b1e9af0121` for the working timed
+transcription path. Keep the ElevenLabs Scribe provider available but inactive
+under the current API key.
+
+Reason: The configured ElevenLabs key remains valid for TTS but returned HTTP
+401 for Scribe. Local Whisper produced genuine word timestamps, preserved the
+keyterm `Toluva`, avoids another credential, and remains visible as a Genblaze
+stage with a pinned revision and weights hash.
+
+### 2026-07-29 — Live translation provider
+
+Decision: Use `argostranslate==1.11.0` and the `translate-en_de` package
+version `1.3` for the verified English-to-German engine slice.
+
+Reason: It provides genuine offline neural translation without an additional
+credential. Wrapping it in a Toluva Genblaze provider keeps the translation
+input, output, protected-term decision, model package, B2 asset, and manifest
+inspectable. This is the current German path, not a promise of arbitrary
+language coverage.
+
+### 2026-07-29 — Stage replay and ambiguous-spend policy
+
+Decision: Write a durable B2 intent before each provider stage and a separate
+completion record after its asset and manifest verify. Reuse completed stages;
+block an intent without completion from automatic replay.
+
+Reason: A stable idempotency key cannot prove that an upstream provider did not
+process an ambiguous request. Durable intent/completion checkpoints prevent
+accidental duplicate spend and allowed the live job to resume after TTS from
+the timing summary without another model call.
+
+### 2026-07-29 — Fixture-free development source
+
+Decision: Use a speech-bearing, locally generated four-second MP4 only as the
+fixture-free engine source, with an explicit `not_final_demo_asset` record.
+
+Reason: The source enables genuine transcription, translation, TTS, timing,
+captions, and composition before the final rights-cleared recording is chosen.
+Calling it a development sample preserves evidence quality without inventing
+rights or presenting a synthetic test clip as the final judge-facing media.
 
 ## 22. Official References
 

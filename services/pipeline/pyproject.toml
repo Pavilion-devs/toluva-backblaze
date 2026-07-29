@@ -4,10 +4,13 @@ version = "0.1.0"
 description = "Governed video-localization pipeline service for Toluva"
 requires-python = ">=3.12,<3.13"
 dependencies = [
+  "argostranslate==1.11.0",
   "fastapi==0.140.13",
+  "faster-whisper==1.2.1",
   "genblaze-core==0.3.8",
   "genblaze-elevenlabs==0.3.3",
   "genblaze-s3==0.3.6",
+  "httpx==0.28.1",
   "pydantic==2.13.4",
   "uvicorn==0.51.0",
 ]

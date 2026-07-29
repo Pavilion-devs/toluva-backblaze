@@ -17,6 +17,12 @@ The first vertical-slice foundation includes:
 - A Toluva Genblaze FFmpeg compositor that fans in video, localized audio, and
   captions
 - Embedded MP4 caption tracks plus durable WebVTT sidecars
+- Local Faster Whisper word-timestamp transcription through a custom Genblaze
+  provider
+- Offline Argos/CTranslate2 English-to-German translation with protected-term
+  enforcement through a custom Genblaze provider
+- B2-backed stage intents and completions that prevent ambiguous duplicate
+  model calls and reuse completed work
 - Append-only, human-inspectable B2 object keys
 - A scoped Genblaze Backblaze sink with lifecycle mutation disabled
 - A real Genblaze manifest run over deterministic local audio bytes
@@ -29,6 +35,23 @@ From the repository root:
 
 ```bash
 UV_CACHE_DIR=.uv-cache uv sync --project services/pipeline
+```
+
+Install the two pinned local model assets into the ignored work directory:
+
+```bash
+export TOLUVA_MODEL_ROOT="$PWD/work/pipeline/models"
+export ARGOS_PACKAGES_DIR="$TOLUVA_MODEL_ROOT/argos/packages"
+export XDG_DATA_HOME="$TOLUVA_MODEL_ROOT/argos/data"
+export XDG_CONFIG_HOME="$TOLUVA_MODEL_ROOT/argos/config"
+export XDG_CACHE_HOME="$TOLUVA_MODEL_ROOT/argos/cache"
+
+services/pipeline/.venv/bin/argospm update
+services/pipeline/.venv/bin/argospm install translate-en_de
+services/pipeline/.venv/bin/hf download \
+  Systran/faster-whisper-base.en \
+  --revision 88b03866a4066bb4a97c12258abb82b1e9af0121 \
+  --local-dir "$TOLUVA_MODEL_ROOT/whisper/base-en"
 ```
 
 ## Verify
@@ -147,3 +170,46 @@ and a `mov_text` subtitle stream. Its SHA-256 is
 `7e3c40a3f685ab57427e6cfa86a32871764ac48b898c65e388769ea0e0d44cf4`.
 The job now contains 14 B2 objects, with three additional source/transcript
 objects under the project. No new model credits were spent.
+
+## Fixture-free end-to-end proof
+
+The current complete engine proof is:
+
+```bash
+PYTHONPATH=services/pipeline/src \
+  services/pipeline/.venv/bin/python -m toluva_pipeline.cli \
+  live-end-to-end --confirm-spend
+```
+
+The explicit flag acknowledges that a fresh job makes one short ElevenLabs TTS
+call. Transcription and translation run locally. Completed stages are loaded
+from B2 on replay, while an unresolved provider intent blocks automatic replay
+to avoid duplicate spend.
+
+The pinned local model assets are:
+
+- `faster-whisper==1.2.1`
+- `Systran/faster-whisper-base.en` revision
+  `88b03866a4066bb4a97c12258abb82b1e9af0121`
+- `argostranslate==1.11.0`
+- Argos `translate-en_de` model package `1.3`
+
+The verified `english-to-german-v4` run:
+
+1. Ingested a real speech-bearing four-second development MP4 into B2.
+2. Transcribed it to “Welcome to Toluva, One Message, Many Languages.” with
+   word timestamps.
+3. Translated it to “Willkommen bei Toluva, eine Botschaft, viele Sprachen.”
+   while preserving `Toluva`.
+4. Generated 3.529433 seconds of German speech for a 4.0-second slot.
+5. Classified -11.764175% drift as amber and padded the small gap with silence.
+6. Composed an exact 4.0-second H.264/AAC/`mov_text` MP4.
+7. Verified all four Genblaze manifests and independently matched the final
+   B2 bytes to SHA-256
+   `611924ce72726f686ead5cc71ccd131bf85d0a58ba5518605ebccfdc9e52ef2b`.
+8. Replayed the completed job from B2 in 1.3 seconds without a provider call.
+
+The configured ElevenLabs key is currently permitted for TTS but returned
+HTTP 401 for Scribe STT. That failure is retained as an inspectable checkpoint.
+Toluva therefore uses the pinned local Whisper path for the working pipeline
+instead of requesting another credential or silently retrying.

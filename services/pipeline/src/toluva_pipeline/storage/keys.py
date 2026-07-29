@@ -67,11 +67,23 @@ class ToluvaObjectKeys:
             f"{_opaque_id(asset_id, 'asset_id')}.{_extension(extension)}"
         )
 
+    def source_record(self, asset_id: str) -> str:
+        return (
+            f"{self.root}/source/records/"
+            f"{_opaque_id(asset_id, 'asset_id')}.json"
+        )
+
     def transcript(self, version: str = "v1") -> str:
         return f"{self.root}/source/transcript/{_opaque_id(version, 'version')}.json"
 
     def segments(self, version: str = "v1") -> str:
         return f"{self.root}/source/segments/{_opaque_id(version, 'version')}.json"
+
+    def transcription_genblaze_prefix(self, version: str = "v1") -> str:
+        return (
+            f"{self.root}/source/transcription/"
+            f"{_opaque_id(version, 'version')}/genblaze"
+        )
 
     def authorization_record(self, authorization_id: str) -> str:
         authorization_id = _opaque_id(authorization_id, "authorization_id")
@@ -101,6 +113,19 @@ class ToluvaObjectKeys:
             f"{scope.job_prefix}/translations/"
             f"{_opaque_id(segment_id, 'segment_id')}/"
             f"attempt-{self._attempt(attempt_number)}.json"
+        )
+
+    def translation_genblaze_prefix(
+        self,
+        scope: StorageScope,
+        segment_id: str,
+        version: str = "v1",
+    ) -> str:
+        self._assert_scope(scope)
+        return (
+            f"{scope.job_prefix}/translations/"
+            f"{_opaque_id(segment_id, 'segment_id')}/"
+            f"{_opaque_id(version, 'version')}/genblaze"
         )
 
     def speech_attempt(
@@ -200,6 +225,27 @@ class ToluvaObjectKeys:
         return (
             f"{scope.job_prefix}/disclosure/"
             f"{_opaque_id(version, 'version')}.json"
+        )
+
+    def stage_intent(self, scope: StorageScope, stage: str) -> str:
+        self._assert_scope(scope)
+        return (
+            f"{scope.job_prefix}/checkpoints/"
+            f"{_opaque_id(stage, 'stage')}/intent.json"
+        )
+
+    def stage_completion(self, scope: StorageScope, stage: str) -> str:
+        self._assert_scope(scope)
+        return (
+            f"{scope.job_prefix}/checkpoints/"
+            f"{_opaque_id(stage, 'stage')}/completed.json"
+        )
+
+    def stage_failure(self, scope: StorageScope, stage: str) -> str:
+        self._assert_scope(scope)
+        return (
+            f"{scope.job_prefix}/checkpoints/"
+            f"{_opaque_id(stage, 'stage')}/failure.json"
         )
 
     def _assert_scope(self, scope: StorageScope) -> None:

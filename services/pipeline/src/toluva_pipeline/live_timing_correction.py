@@ -84,6 +84,9 @@ class GenblazeElevenLabsAttemptGenerator:
         keys: ToluvaObjectKeys,
         authorization_id: str,
         authorization_code: str,
+        language: str = LIVE_LANGUAGE,
+        language_code: str = "de",
+        purpose: str = "internal-training",
     ) -> None:
         self._provider = ElevenLabsTTSProvider(api_key=settings.elevenlabs_api_key)
         self._backend = backend
@@ -91,6 +94,9 @@ class GenblazeElevenLabsAttemptGenerator:
         self._keys = keys
         self._authorization_id = authorization_id
         self._authorization_code = authorization_code
+        self._language = language
+        self._language_code = language_code
+        self._purpose = purpose
         self._results: dict[str, PipelineResult] = {}
 
     def generate(
@@ -144,8 +150,8 @@ class GenblazeElevenLabsAttemptGenerator:
                 metadata={
                     "authorization_id": self._authorization_id,
                     "authorization_code": self._authorization_code,
-                    "language": LIVE_LANGUAGE,
-                    "purpose": "internal-training",
+                    "language": self._language,
+                    "purpose": self._purpose,
                     "synthetic_voice": True,
                     "voice_type": VoiceType.STOCK.value,
                     "segment_id": request.segment_id,
@@ -153,7 +159,7 @@ class GenblazeElevenLabsAttemptGenerator:
                     "idempotency_key": context.idempotency_key,
                 },
                 voice_id=DEFAULT_STOCK_VOICE_ID,
-                language_code="de",
+                language_code=self._language_code,
                 with_timestamps=True,
                 output_format="mp3_44100_128",
                 seed=20260729,
