@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import subprocess
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -24,6 +23,7 @@ from toluva_pipeline.domain.timing import (
     decide_timing_action,
     measure_timing,
 )
+from toluva_pipeline.media import probe_duration
 from toluva_pipeline.settings import Settings
 from toluva_pipeline.storage.b2 import (
     CredentialConfigurationError,
@@ -64,28 +64,6 @@ class LiveTTSReport:
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
-
-
-def _probe_duration(path: Path) -> float:
-    completed = subprocess.run(
-        [
-            "ffprobe",
-            "-v",
-            "error",
-            "-show_entries",
-            "format=duration",
-            "-of",
-            "default=noprint_wrappers=1:nokey=1",
-            str(path),
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    duration = float(completed.stdout.strip())
-    if duration <= 0:
-        raise RuntimeError("ffprobe returned a non-positive audio duration")
-    return duration
 
 
 def run_live_tts_spike(
@@ -218,7 +196,7 @@ def run_live_tts_spike(
     if local_url.scheme != "file":
         raise RuntimeError("Expected the ElevenLabs adapter to return a local file")
     local_audio_path = Path(unquote(local_url.path))
-    generated_seconds = _probe_duration(local_audio_path)
+    generated_seconds = probe_duration(local_audio_path)
     timing_policy = TimingPolicy(
         green_threshold=settings.green_drift_threshold,
         amber_threshold=settings.amber_drift_threshold,

@@ -1,7 +1,7 @@
 # Toluva — Product, Architecture, and Win Plan
 
 Last updated: July 29, 2026  
-Status: First live ElevenLabs-to-B2 segment verified; timing-correction loop next
+Status: Live red-to-green timing-correction loop verified; vertical slice next
 Submission deadline: August 3, 2026 at 10:00 p.m. WAT  
 Internal submission target: August 3, 2026 at 6:00 p.m. WAT
 
@@ -656,25 +656,25 @@ The user sees:
 
 ### Must have
 
-- [ ] Stable hosted web application
+- [x] Stable hosted web application
 - [ ] Preloaded judge-friendly sample
 - [ ] Source-video upload or ingest
 - [ ] B2 source storage
 - [ ] Timed transcription
 - [ ] Segmentation
-- [ ] Voice-authorization record
-- [ ] Pre-generation authorization gate
+- [x] Voice-authorization record
+- [x] Pre-generation authorization gate
 - [ ] Target-language selection
 - [ ] Protected terminology
 - [ ] Translation
-- [ ] Genblaze TTS generation
-- [ ] Actual duration measurement
-- [ ] Drift classification
-- [ ] Bounded rewrite/regeneration loop
+- [x] Genblaze TTS generation
+- [x] Actual duration measurement
+- [x] Drift classification
+- [x] Bounded rewrite/regeneration loop
 - [ ] Captions
 - [ ] Final media composition
 - [ ] B2 storage for intermediates and finals
-- [ ] Genblaze manifests/lineage
+- [x] Genblaze manifests/lineage
 - [ ] Job and segment status UI
 - [ ] Source/final playback comparison
 - [ ] Provenance/disclosure inspector
@@ -751,9 +751,9 @@ Completed without provider credentials:
   canonical manifest, verified the manifest, and independently matched the
   declared asset SHA-256 to the referenced file bytes.
 - Added a FastAPI service boundary and secret-safe readiness endpoint.
-- Locked the Python dependency graph and passed 39 service tests.
+- Locked the Python dependency graph and passed 52 service tests.
 
-Live portion still required:
+Live portion completed:
 
 - Completed on July 29 with credentials stored only in the ignored local
   environment.
@@ -780,6 +780,35 @@ Live portion still required:
   reporting before choosing a paid plan.
 - Logged the transfer-allowlist behavior as a reproducible Genblaze feedback
   candidate in `docs/genblaze-feedback-allowed-output-root.md`.
+
+Timing-correction loop completed:
+
+- Implemented a provider-independent bounded engine for initial generation,
+  objective measurement, constrained shortening or expansion, regeneration,
+  silence padding, and human review after retry exhaustion.
+- Protected terms are validated before the first provider call and after every
+  rewrite. A failed rewrite cannot trigger another billable TTS request.
+- Every translation, timing decision, failure, and summary uses a distinct
+  append-only B2 key. A stable job/segment record blocks accidental reruns
+  before the provider is called.
+- Each TTS attempt is its own Genblaze run and manifest. The correction engine
+  uses `Pipeline.from_result()` so attempt 2 carries attempt 1 as its
+  `parent_run_id`.
+- Ran a 133-character German attempt against a 3.8-second source slot. The
+  generated duration was 8.126984 seconds: +113.868% drift, red.
+- Applied the human-reviewed 54-character constrained rewrite and regenerated.
+  The second duration was 3.575873 seconds: -5.898079% drift, green.
+- Both audio objects matched their declared SHA-256 hashes. Both stored
+  Genblaze manifests verified, and the second stored run retained the parent
+  link.
+- B2 contains nine job-scoped objects for the proof: two translations, two
+  audio assets, two manifests, two timing reports, and one summary. The
+  authorization evidence and record are stored separately under the project.
+- The proof spent 187 ElevenLabs input characters across two explicit calls.
+  Provider auto-retry was disabled to avoid ambiguous double billing.
+- The rewrite was deliberately labelled `human-reviewed-scripted-spike`.
+  Translation-provider integration remains a separate next step and the result
+  is not misrepresented as an LLM rewrite.
 
 ## 16. Delivery Schedule
 
@@ -1125,6 +1154,37 @@ Reason: A project-local output directory caused the provider call to succeed
 but `ObjectStorageSink` to reject the asset as outside its allowed roots. The
 public sink constructor does not expose `AssetTransfer.allowed_roots`. The
 failed attempt remains in B2 with an explicit failure record.
+
+### 2026-07-29 — Timing-correction execution boundary
+
+Decision: Toluva owns the bounded correction loop, while each speech attempt is
+an independent Genblaze run linked to the previous attempt with
+`Pipeline.from_result()`.
+
+Reason: Duration is only known after the generated file is measured. Keeping
+the loop in Toluva makes its domain policy explicit while preserving genuine
+Genblaze generation, manifests, storage, and parent/child lineage for every
+attempt.
+
+### 2026-07-29 — Retry and duplicate-spend policy
+
+Decision: Use a deterministic per-attempt idempotency key in Toluva records,
+block an existing job/segment before generation, and set Genblaze provider
+auto-retries to zero on the current ElevenLabs path.
+
+Reason: The adapter does not expose a confirmed ElevenLabs idempotency-header
+contract. An automatic retry after an ambiguous response could double-bill.
+Toluva therefore treats each retry as an explicit measured correction attempt.
+
+### 2026-07-29 — First correction rewrite source
+
+Decision: Use a human-reviewed scripted German rewrite for the live
+red-to-green proof and label it as such.
+
+Reason: No translation-provider credential is configured. This proves the
+timing engine, Genblaze lineage, B2 persistence, and TTS behavior without
+pretending that a manual fixture came from a model. The production rewriter
+will sit behind the same provider-independent interface.
 
 ## 22. Official References
 

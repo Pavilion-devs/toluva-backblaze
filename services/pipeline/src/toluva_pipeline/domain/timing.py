@@ -181,3 +181,26 @@ def build_shortening_instruction(
         f"approved equivalents. Do not add new claims. Retry {retry_number}. "
         f"Protected terms: {protected}. Translation: {text}"
     )
+
+
+def build_expansion_instruction(
+    *,
+    text: str,
+    source_language: str,
+    target_language: str,
+    current_seconds: float,
+    target_seconds: float,
+    protected_terms: tuple[str, ...] = (),
+    retry_number: int,
+) -> str:
+    if target_seconds <= 0 or current_seconds <= 0:
+        raise ValueError("current_seconds and target_seconds must be positive")
+    protected = ", ".join(protected_terms) if protected_terms else "None"
+    return (
+        f"Rewrite this {target_language} translation to naturally fill "
+        f"{target_seconds:.2f}s instead of {current_seconds:.2f}s. Preserve the "
+        f"complete meaning of the {source_language} source and keep protected "
+        f"terms exact or use their approved equivalents. Do not add filler or "
+        f"new claims. Retry {retry_number}. Protected terms: {protected}. "
+        f"Translation: {text}"
+    )

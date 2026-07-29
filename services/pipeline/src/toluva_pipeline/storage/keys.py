@@ -114,6 +114,54 @@ class ToluvaObjectKeys:
             f"attempt-{self._attempt(attempt_number)}.{_extension(extension)}"
         )
 
+    def speech_genblaze_prefix(
+        self,
+        scope: StorageScope,
+        segment_id: str,
+        attempt_number: int,
+    ) -> str:
+        self._assert_scope(scope)
+        return (
+            f"{scope.job_prefix}/speech/"
+            f"{_opaque_id(segment_id, 'segment_id')}/"
+            f"attempt-{self._attempt(attempt_number)}/genblaze"
+        )
+
+    def timing_attempt(
+        self,
+        scope: StorageScope,
+        segment_id: str,
+        attempt_number: int,
+    ) -> str:
+        self._assert_scope(scope)
+        return (
+            f"{scope.job_prefix}/qa/"
+            f"{_opaque_id(segment_id, 'segment_id')}/"
+            f"attempt-{self._attempt(attempt_number)}.json"
+        )
+
+    def timing_summary(self, scope: StorageScope, segment_id: str) -> str:
+        self._assert_scope(scope)
+        return (
+            f"{scope.job_prefix}/qa/"
+            f"{_opaque_id(segment_id, 'segment_id')}/summary.json"
+        )
+
+    def attempt_failure(
+        self,
+        scope: StorageScope,
+        segment_id: str,
+        attempt_number: int,
+        stage: str,
+    ) -> str:
+        self._assert_scope(scope)
+        return (
+            f"{scope.job_prefix}/failures/"
+            f"{_opaque_id(segment_id, 'segment_id')}/"
+            f"attempt-{self._attempt(attempt_number)}-"
+            f"{_opaque_id(stage, 'stage')}.json"
+        )
+
     def disclosure(self, scope: StorageScope, version: str = "v1") -> str:
         self._assert_scope(scope)
         return (

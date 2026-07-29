@@ -24,11 +24,20 @@ Backblaze B2.
 - Tested authorization rules for allowed, expired, revoked, wrong-language,
   wrong-purpose, wrong-voice, and invalid-evidence cases
 - Tested timing policy at the exact green/amber/red boundaries
+- A provider-independent, bounded timing-correction engine with protected-term
+  enforcement, shorten/expand rewrites, silence-padding decisions, and human
+  review after retry exhaustion
 - Append-only B2 object-key construction and a scoped Genblaze B2 sink
 - A zero-cost Genblaze run with a canonical manifest and independent media-byte
   hash verification
 - A live 54-character German ElevenLabs TTS run with word timestamps, B2-backed
   audio, a canonical Genblaze manifest, and downloaded-byte verification
+- A live red-to-green timing proof: 8.126984 seconds against a 3.8-second slot
+  was shortened and regenerated to 3.575873 seconds, moving from +113.868%
+  red drift to -5.898079% green drift
+- Separate Genblaze manifests, verified audio hashes, parent/child run lineage,
+  translation revisions, QA records, and deterministic spend guards for every
+  correction attempt
 - A FastAPI boundary for health, authorization, timing, and local spike runs
 
 ## Run locally
@@ -65,8 +74,8 @@ See `services/pipeline/README.md` for the API and credential-readiness commands.
   environment; they are absent from tracked files.
 - The first live worker path runs locally and is not connected to the hosted UI
   yet.
-- The timing thresholds are product defaults to be validated through the first
-  live speech sample.
+- The timing thresholds remain configurable product defaults; the first live
+  red-to-green German sample has now validated the complete correction path.
 - Toluva is evidence-ready and compliance-supporting; it does not guarantee
   legal or regulatory compliance.
 

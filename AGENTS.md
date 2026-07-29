@@ -128,6 +128,20 @@ Do not slow speech enough to make it sound unnatural.
 Persist every attempt, measurement, decision, and parent/child run relationship.
 Never hide failed attempts from the audit trail.
 
+The implemented correction boundary is:
+
+- Toluva owns the bounded measure/rewrite/regenerate loop.
+- Each speech attempt is a separate Genblaze run and canonical manifest.
+- A retry uses `Pipeline.from_result()` so the next manifest carries the
+  previous attempt's `parent_run_id`.
+- Translation and QA records are written before and after each billable call to
+  distinct append-only B2 keys.
+- The current ElevenLabs adapter path uses `max_retries=0`; a provider retry
+  without a supported idempotency header could double-bill. Toluva retries only
+  as an explicit, measured correction attempt.
+- A stable job/segment record blocks accidental reruns before another provider
+  call. A new job ID means an intentional new billable run.
+
 ## Architecture Decisions
 
 ### Genblaze must own visible orchestration

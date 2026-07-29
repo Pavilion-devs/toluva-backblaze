@@ -28,6 +28,20 @@ def test_scope_cannot_cross_projects() -> None:
         keys.translation_attempt(scope, "segment-03", 1)
 
 
+def test_timing_and_speech_prefixes_are_attempt_scoped() -> None:
+    scope = StorageScope("project-01", "job-01", "de-DE")
+    keys = ToluvaObjectKeys("project-01")
+    assert keys.speech_genblaze_prefix(scope, "segment-01", 2).endswith(
+        "/speech/segment-01/attempt-2/genblaze"
+    )
+    assert keys.timing_attempt(scope, "segment-01", 2).endswith(
+        "/qa/segment-01/attempt-2.json"
+    )
+    assert keys.timing_summary(scope, "segment-01").endswith(
+        "/qa/segment-01/summary.json"
+    )
+
+
 @pytest.mark.parametrize("unsafe_id", ["../escape", "space here", "", "/root"])
 def test_unsafe_identifiers_are_rejected(unsafe_id: str) -> None:
     with pytest.raises(ValueError):

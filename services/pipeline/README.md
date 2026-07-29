@@ -9,6 +9,10 @@ The first vertical-slice foundation includes:
 - A provider-independent voice-authorization gate
 - Timing-drift measurement at the exact 8% and 15% boundaries
 - Bounded shorten/expand/pad/review decisions
+- A provider-independent correction loop that preserves protected terms and
+  stops after a configured retry budget
+- One Genblaze run and manifest per speech attempt with parent/child lineage
+- Append-only B2 translation, timing, failure, and summary records
 - Append-only, human-inspectable B2 object keys
 - A scoped Genblaze Backblaze sink with lifecycle mutation disabled
 - A real Genblaze manifest run over deterministic local audio bytes
@@ -82,3 +86,33 @@ with `ffprobe`, and downloads the stored object to verify its SHA-256.
 The first verified live run produced 3.668753 seconds of speech for a
 4.0-second slot, returned seven word timings, and selected amber/silence
 padding at -8.281175% drift.
+
+## Live timing-correction proof
+
+The explicit billable red-to-green proof is:
+
+```bash
+PYTHONPATH=services/pipeline/src \
+  services/pipeline/.venv/bin/python -m toluva_pipeline.cli \
+  live-timing-correction --confirm-spend
+```
+
+The default job ID is stable. If its first translation or summary already
+exists in B2, the command stops before another provider call. Use a new
+`--job-id` only for an intentional new run.
+
+The verified July 29 run used a human-reviewed scripted rewrite because a
+translation-provider credential is not configured yet. It does not represent
+the rewrite as model-generated.
+
+- Attempt 1: 133 characters, 8.126984 seconds for a 3.8-second slot,
+  +113.868% drift, red, `retry_shorter`
+- Attempt 2: 54 characters, 3.575873 seconds, -5.898079% drift, green,
+  `accept`
+- Both audio objects matched their declared SHA-256 values.
+- Both Genblaze manifests verified and the second manifest points to the first
+  run as its parent.
+- Nine job-scoped B2 objects preserve two translations, two audio files, two
+  manifests, two timing records, and the final summary.
+- Provider auto-retry is disabled for this adapter path because an ambiguous
+  retry could double-bill. The Toluva engine owns explicit correction attempts.

@@ -5,6 +5,7 @@ from toluva_pipeline.domain.timing import (
     DriftDirection,
     TimingAction,
     TimingPolicy,
+    build_expansion_instruction,
     build_shortening_instruction,
     decide_timing_action,
     measure_timing,
@@ -87,3 +88,18 @@ def test_shortening_instruction_contains_real_constraints() -> None:
     assert "5.00s" in instruction
     assert "Toluva" in instruction
     assert "Retry 2" in instruction
+
+
+def test_expansion_instruction_rejects_filler_and_new_claims() -> None:
+    instruction = build_expansion_instruction(
+        text="Toluva lokalisiert.",
+        source_language="English",
+        target_language="German",
+        current_seconds=3.0,
+        target_seconds=4.0,
+        protected_terms=("Toluva",),
+        retry_number=2,
+    )
+    assert "naturally fill 4.00s" in instruction
+    assert "3.00s" in instruction
+    assert "Do not add filler or new claims" in instruction
