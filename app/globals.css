@@ -33,25 +33,34 @@ body {
 }
 
 button,
-select {
+select,
+input {
   font: inherit;
 }
 
 button,
 a,
-select {
+select,
+input {
   -webkit-tap-highlight-color: transparent;
 }
 
 button:focus-visible,
 a:focus-visible,
-select:focus-visible {
+select:focus-visible,
+input:focus-visible {
   outline: 3px solid rgba(255, 118, 95, 0.45);
   outline-offset: 3px;
 }
 
 button {
   cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+  transform: none;
 }
 
 .app-shell {
@@ -417,6 +426,171 @@ button {
   background: transparent;
   border: 0;
   font-size: 18px;
+}
+
+.job-progress {
+  background: var(--paper-soft);
+  border: 1px solid var(--line);
+  margin-bottom: 24px;
+  padding: 20px;
+}
+
+.job-progress-header {
+  align-items: flex-start;
+  display: flex;
+  gap: 20px;
+  justify-content: space-between;
+}
+
+.job-progress-header h2 {
+  font-size: 20px;
+  font-weight: 590;
+  letter-spacing: -0.035em;
+  margin: 6px 0 0;
+}
+
+.job-progress-header p {
+  color: #74756c;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 8px;
+  margin: 5px 0 0;
+}
+
+.job-state {
+  align-items: center;
+  border: 1px solid currentColor;
+  display: inline-flex;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 8px;
+  font-weight: 750;
+  gap: 7px;
+  letter-spacing: 0.1em;
+  padding: 7px 9px;
+  text-transform: uppercase;
+}
+
+.job-state i {
+  background: currentColor;
+  border-radius: 50%;
+  height: 6px;
+  width: 6px;
+}
+
+.state-queued {
+  color: #9a5b19;
+}
+
+.state-running {
+  color: #166f83;
+}
+
+.state-completed {
+  color: var(--mint-dark);
+}
+
+.state-blocked,
+.state-failed {
+  color: #b54e3f;
+}
+
+.job-event-track {
+  display: flex;
+  gap: 8px;
+  margin-top: 18px;
+  overflow-x: auto;
+  padding-bottom: 5px;
+}
+
+.job-event-track article {
+  align-items: flex-start;
+  border: 1px solid var(--line);
+  display: grid;
+  flex: 0 0 250px;
+  gap: 10px;
+  grid-template-columns: 24px 1fr;
+  min-height: 72px;
+  padding: 11px;
+}
+
+.job-event-track article > span {
+  align-items: center;
+  background: var(--ink);
+  color: var(--lime);
+  display: flex;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 8px;
+  height: 24px;
+  justify-content: center;
+  width: 24px;
+}
+
+.job-event-track strong,
+.job-event-track small {
+  display: block;
+}
+
+.job-event-track strong {
+  font-size: 9px;
+}
+
+.job-event-track small {
+  color: #75766e;
+  font-size: 8px;
+  line-height: 1.4;
+  margin-top: 4px;
+}
+
+.job-progress-footer {
+  align-items: center;
+  border-top: 1px solid var(--line);
+  color: #74756d;
+  display: flex;
+  font-size: 8px;
+  justify-content: space-between;
+  margin-top: 13px;
+  padding-top: 11px;
+}
+
+.job-progress-footer strong {
+  color: #a45a16;
+  font-weight: 650;
+}
+
+.job-output {
+  background: var(--ink);
+  color: #f5efe3;
+  display: grid;
+  gap: 18px;
+  grid-template-columns: minmax(190px, 0.45fr) minmax(320px, 1fr);
+  margin-top: 16px;
+  padding: 18px;
+}
+
+.job-output > div {
+  align-self: center;
+}
+
+.job-output strong,
+.job-output small {
+  display: block;
+}
+
+.job-output strong {
+  font-size: 12px;
+  margin-top: 7px;
+}
+
+.job-output small {
+  color: #94aaa8;
+  font-size: 9px;
+  line-height: 1.45;
+  margin-top: 5px;
+}
+
+.job-output video {
+  background: #041216;
+  max-height: 300px;
+  width: 100%;
 }
 
 .project-intro {
@@ -1698,6 +1872,10 @@ button {
   width: 100%;
 }
 
+.intake-dialog {
+  max-width: 580px;
+}
+
 .dialog-header {
   align-items: flex-start;
   display: flex;
@@ -1726,6 +1904,134 @@ button {
   font-size: 11px;
   line-height: 1.55;
   margin: 17px 0 20px;
+}
+
+.upload-field {
+  border: 1px dashed #918b7e;
+  display: block;
+  padding: 15px;
+}
+
+.upload-field > span,
+.upload-field > small {
+  display: block;
+}
+
+.upload-field > span {
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.upload-field input {
+  color: var(--ink);
+  display: block;
+  font-size: 10px;
+  margin-top: 10px;
+  width: 100%;
+}
+
+.upload-field input::file-selector-button {
+  background: var(--ink);
+  border: 0;
+  color: var(--paper-soft);
+  cursor: pointer;
+  font-size: 9px;
+  font-weight: 700;
+  margin-right: 10px;
+  min-height: 34px;
+  padding: 0 12px;
+}
+
+.upload-field > small {
+  color: #74746b;
+  font-size: 8px;
+  line-height: 1.45;
+  margin-top: 9px;
+}
+
+.upload-readout {
+  align-items: flex-start;
+  border: 1px solid var(--line);
+  display: grid;
+  font-size: 9px;
+  gap: 10px;
+  grid-template-columns: 24px 1fr;
+  margin-top: 10px;
+  padding: 11px;
+}
+
+.upload-reading {
+  display: block;
+}
+
+.upload-ready {
+  background: rgba(136, 231, 190, 0.12);
+  border-color: rgba(19, 118, 92, 0.35);
+}
+
+.upload-failed {
+  background: rgba(255, 118, 95, 0.1);
+  border-color: rgba(183, 77, 59, 0.35);
+}
+
+.upload-readout > span {
+  align-items: center;
+  background: var(--mint);
+  border-radius: 50%;
+  display: flex;
+  font-weight: 900;
+  height: 24px;
+  justify-content: center;
+  width: 24px;
+}
+
+.upload-failed > span {
+  background: var(--coral);
+}
+
+.upload-readout strong,
+.upload-readout small {
+  display: block;
+}
+
+.upload-readout small {
+  color: #71736b;
+  margin-top: 3px;
+}
+
+.intake-contract {
+  border: 1px solid var(--line);
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  margin-top: 12px;
+}
+
+.intake-contract div {
+  border-bottom: 1px solid var(--line);
+  padding: 11px 12px;
+}
+
+.intake-contract div:nth-child(odd) {
+  border-right: 1px solid var(--line);
+}
+
+.intake-contract div:nth-last-child(-n + 2) {
+  border-bottom: 0;
+}
+
+.intake-contract span,
+.intake-contract strong {
+  display: block;
+}
+
+.intake-contract span {
+  color: #797970;
+  font-size: 8px;
+}
+
+.intake-contract strong {
+  font-size: 9px;
+  margin-top: 3px;
 }
 
 .field {
@@ -1985,6 +2291,35 @@ button {
   .project-actions {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .topbar-actions .button-secondary {
+    display: none;
+  }
+
+  .job-progress-header,
+  .job-progress-footer {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .job-output {
+    grid-template-columns: 1fr;
+  }
+
+  .intake-contract {
+    grid-template-columns: 1fr;
+  }
+
+  .intake-contract div,
+  .intake-contract div:nth-child(odd),
+  .intake-contract div:nth-last-child(-n + 2) {
+    border-bottom: 1px solid var(--line);
+    border-right: 0;
+  }
+
+  .intake-contract div:last-child {
+    border-bottom: 0;
   }
 
   .overview-grid {

@@ -15,6 +15,10 @@ from toluva_pipeline.live_timing_correction import (
     run_live_timing_correction,
 )
 from toluva_pipeline.live_tts import run_live_tts_spike
+from toluva_pipeline.job_queue import (
+    process_next_queued_job,
+    process_queued_job,
+)
 from toluva_pipeline.provenance import run_local_provenance_spike
 from toluva_pipeline.settings import Settings
 
@@ -99,6 +103,28 @@ def main() -> None:
         default=E2E_JOB_ID,
         help="Stable job ID; completed stages are safely reused.",
     )
+    queue_worker = subparsers.add_parser("queue-worker")
+    queue_worker.add_argument(
+        "--confirm-spend",
+        action="store_true",
+        help=(
+            "Required acknowledgement that a claimed job may spend "
+            "ElevenLabs credits."
+        ),
+    )
+    queue_worker.add_argument(
+        "--once",
+        action="store_true",
+        help="Claim and process at most one oldest unclaimed B2 job.",
+    )
+    queue_worker.add_argument(
+        "--project-id",
+        help="Exact intake project ID to resume or process.",
+    )
+    queue_worker.add_argument(
+        "--job-id",
+        help="Exact localization job ID to resume or process.",
+    )
     args = parser.parse_args()
 
     if args.command == "readiness":
@@ -126,13 +152,44 @@ def main() -> None:
             Settings.from_env(),
             job_id=args.job_id,
         ).to_dict()
-    else:
+    elif args.command == "live-end-to-end":
         if not args.confirm_spend:
             parser.error("live-end-to-end requires --confirm-spend")
         result = run_live_end_to_end(
             Settings.from_env(),
             job_id=args.job_id,
         ).to_dict()
+    else:
+        if not args.confirm_spend:
+            parser.error("queue-worker requires --confirm-spend")
+        exact_handle = bool(args.project_id or args.job_id)
+        if exact_handle and not (args.project_id and args.job_id):
+            parser.error(
+                "queue-worker requires both --project-id and --job-id"
+            )
+        if exact_handle and args.once:
+            parser.error(
+                "queue-worker accepts either --once or an exact job handle"
+            )
+        if not exact_handle and not args.once:
+            parser.error(
+                "queue-worker requires --once or an exact job handle"
+            )
+        settings = Settings.from_env()
+        report = (
+            process_queued_job(
+                settings,
+                project_id=args.project_id,
+                job_id=args.job_id,
+            )
+            if exact_handle
+            else process_next_queued_job(settings)
+        )
+        result = (
+            {"status": "idle", "message": "No unclaimed B2 job was found."}
+            if report is None
+            else report.to_dict()
+        )
     print(json.dumps(result, indent=2, sort_keys=True))
 
 

@@ -166,13 +166,15 @@ The current execution boundary is deliberate:
 - The Python 3.12 FastAPI service under `services/pipeline` owns Genblaze and
   long-running media work.
 - Never move B2 or provider credentials into the browser.
-- The Sites server runtime may hold a read-capable B2 application key only when
+- The Sites server runtime may hold a read/write B2 application key only when
   it is stored as encrypted runtime secrets, restricted to the `projects/`
-  prefix, and used behind the allowlisted server bridge. Do not put
-  ElevenLabs or generation-provider credentials in Sites.
+  prefix, and used behind the governed server bridge. Sites may write validated
+  upload, source-record, immutable queue-request, and initial status-event
+  objects. Do not put ElevenLabs or generation-provider credentials in Sites.
 - The hosted bridge is an observability and private-media boundary. It may read
-  verified records, count job objects, proxy byte ranges, and replay completed
-  state. It must not execute the Python generation pipeline.
+  verified records, count job objects, proxy byte ranges, replay completed
+  state, and create the narrow governed B2 intake contract. It must not execute
+  the Python generation pipeline.
 - The first verified package pins are `genblaze-core==0.3.8`,
   `genblaze-s3==0.3.6`, and `genblaze-elevenlabs==0.3.3`. Upgrade them only
   through an explicit provider spike and update `plan.md`.
@@ -224,6 +226,20 @@ The hosted read contract is:
   so private MP4 playback remains seekable.
 - Return sanitized errors and fall back visibly to a verified record snapshot;
   never label the snapshot as a live B2 response.
+
+The hosted write and uploaded-job contract is:
+
+- Accept only a short MP4 within the configured byte and duration limits.
+- Enforce the currently verified German/internal-training authorization lane
+  before writing a request.
+- Generate opaque project, job, and source IDs on the server.
+- Write source, source record, immutable queue request, and initial status event
+  beneath that exact opaque project namespace.
+- Keep B2 as the job-state authority. Browser session storage may hold only an
+  opaque pointer used to recover the B2 state after refresh.
+- Resolve completed uploaded-job media from the immutable final record and
+  exact opaque job namespace; never accept an arbitrary B2 key from the browser.
+- Keep the Python worker and every provider credential outside Sites.
 
 The current Genblaze Backblaze adapter uses `B2_REGION` to derive its endpoint.
 Keep generated sinks scoped beneath the project/job/language prefix, use the

@@ -1,7 +1,7 @@
 # Toluva — Product, Architecture, and Win Plan
 
 Last updated: July 29, 2026  
-Status: Verified German engine connected to hosted UI; final licensed sample and write-path worker next
+Status: B2-backed upload/queue/worker/playback slice verified; always-on worker host and final licensed sample next
 Submission deadline: August 3, 2026 at 10:00 p.m. WAT  
 Internal submission target: August 3, 2026 at 6:00 p.m. WAT
 
@@ -893,6 +893,47 @@ Hosted engine view completed:
 - Added an honest `LIVE B2 RUN` versus `VERIFIED SNAPSHOT` state. Missing B2
   credentials fail closed and never expose a secret or invent a live response.
 
+Durable upload and queue slice completed:
+
+- Added a governed Sites-hosted MP4 intake for the first deliberately narrow
+  lane: 1–8 second, single-turn English clips to German internal training using
+  the disclosed stock synthetic voice and protected term `Toluva`.
+- The server validates MIME type, 12 MB size limit, client-measured duration,
+  target language, and purpose before writing. The browser never receives a B2
+  or provider credential.
+- A fresh request creates opaque project, job, and source IDs. It writes the
+  source MP4, source record, immutable queue request, and initial status event
+  beneath the `projects/` B2 prefix.
+- Added a Python B2 queue consumer that validates the request handle, source
+  key, size, and SHA-256 before claiming the job. The worker publishes
+  append-only status events for queue, claim, source verification,
+  transcription, translation, authorization, TTS, timing QA, composition, and
+  completion.
+- Parameterized the verified end-to-end engine to ingest a pre-existing
+  uploaded source while preserving the old development proof defaults.
+- Added refresh recovery using a browser-held opaque job pointer only. The job
+  request, state, media, and final record remain authoritative in B2.
+- Added a completed-job media bridge that resolves source, final MP4, captions,
+  and speech only from the immutable final record and exact opaque job handle.
+- Ran the real four-second English sample through the hosted-style upload route.
+  B2 stored a 49,903-byte source and returned a durable queued state.
+- The Python worker consumed that exact request and completed all 12 status
+  stages. Whisper detected “Welcome to Toluva, One Message, Many Languages.”,
+  Argos produced the verified German translation, ElevenLabs generated 54
+  characters once, timing QA selected amber silence padding, and Genblaze
+  produced the exact 4.0-second final MP4.
+- The final asset SHA-256 remained
+  `611924ce72726f686ead5cc71ccd131bf85d0a58ba5518605ebccfdc9e52ef2b`.
+  The hosted-style proxy returned HTTP 206 for the new job's MP4 and
+  `text/vtt` for its captions.
+- Replaying the exact uploaded job returned the completed B2 checkpoint without
+  Whisper, Argos, ElevenLabs, or FFmpeg output, confirming duplicate-spend
+  protection.
+- The queue consumer is production-shaped but currently operator-run. An
+  always-on external Python worker host is still required before describing
+  new public uploads as automatically executed while the development machine
+  is offline.
+
 ## 16. Delivery Schedule
 
 ### July 29 — Lock and spike
@@ -1116,7 +1157,8 @@ Resolve during scaffolding or the first spike:
 - [x] Web framework — Next.js 16 UI compiled by Vinext for Cloudflare/Sites
 - [x] API framework — Python 3.12 with FastAPI
 - [ ] Metadata database
-- [ ] Job queue/worker approach
+- [x] Job queue/worker approach — append-only Backblaze B2 queue and Python
+      consumer
 - [ ] Worker hosting target; web hosting is locked to OpenAI Sites
 - [x] Transcription provider/model — local Faster Whisper 1.2.1 with
       `Systran/faster-whisper-base.en` revision
@@ -1377,6 +1419,35 @@ the active source explicitly as `LIVE B2 RUN` or `VERIFIED SNAPSHOT`.
 Reason: A temporary storage read failure should not erase inspectable evidence,
 but cached evidence must never be misrepresented as a live provider or storage
 response.
+
+### 2026-07-29 — Durable upload and queue contract
+
+Decision: Use append-only Backblaze B2 objects as the first durable job queue.
+The Sites server owns validated upload and immutable request creation; the
+Python worker owns claims, Genblaze execution, and status events.
+
+Reason: This survives browser and web-process restarts, makes B2 central to
+orchestration rather than only asset storage, and avoids placing long-running
+generation inside a short-lived hosted request.
+
+### 2026-07-29 — First uploaded-job execution boundary
+
+Decision: Support only short, single-turn English MP4s containing the protected
+term `Toluva`, localized to German for internal training, until broader
+segmentation and authorization records are verified.
+
+Reason: This matches the proven Whisper/Argos/ElevenLabs path and prevents the
+UI from promising arbitrary languages, durations, speakers, or policies.
+
+### 2026-07-29 — Uploaded-job state and media resolution
+
+Decision: Persist append-only stage events in B2 and keep only an opaque job
+pointer in browser session storage. Resolve completed media from the immutable
+final record and exact opaque job namespace.
+
+Reason: B2 remains authoritative after refresh, the UI can poll without a
+database, and neither a browser-supplied object key nor a mutable `latest.json`
+record can widen the private-media boundary.
 
 ## 22. Official References
 

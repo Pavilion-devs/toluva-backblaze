@@ -1,6 +1,7 @@
 import "server-only";
 
-const REQUIRED_PREFIX = "projects/live-localization-project/";
+const PROJECTS_PREFIX = "projects/";
+const VERIFIED_PREFIX = "projects/live-localization-project/";
 const AUTHORIZE_URL =
   "https://api.backblazeb2.com/b2api/v4/b2_authorize_account";
 const AUTH_CACHE_MILLISECONDS = 30 * 60 * 1000;
@@ -29,6 +30,14 @@ export type B2File = {
   uploadTimestamp: number;
 };
 
+export type B2Upload = {
+  contentLength: number;
+  contentSha1: string;
+  contentType: string;
+  fileId: string;
+  fileName: string;
+};
+
 type B2Context = {
   apiUrl: string;
   authorizationToken: string;
@@ -51,15 +60,24 @@ function requireEnvironment(name: string): string {
   return value;
 }
 
-function safeObjectKey(key: string): string {
+function safeProjectObjectKey(key: string): string {
   if (
-    !key.startsWith(REQUIRED_PREFIX) ||
+    !key.startsWith(PROJECTS_PREFIX) ||
+    key.length > 1024 ||
     key.includes("..") ||
-    key.includes("\\")
+    key.includes("\\") ||
+    key.includes("\0")
   ) {
-    throw new Error("b2_object_outside_verified_project");
+    throw new Error("b2_object_outside_projects_prefix");
   }
   return key;
+}
+
+function safeVerifiedObjectKey(key: string): string {
+  if (!key.startsWith(VERIFIED_PREFIX)) {
+    throw new Error("b2_object_outside_verified_project");
+  }
+  return safeProjectObjectKey(key);
 }
 
 function basicAuthorization(keyId: string, applicationKey: string): string {
@@ -105,7 +123,7 @@ async function authorizeB2(force = false): Promise<B2Context> {
     !storage.downloadUrl ||
     !bucket ||
     !capabilities.includes("readFiles") ||
-    (namePrefix && !REQUIRED_PREFIX.startsWith(namePrefix))
+    (namePrefix && !PROJECTS_PREFIX.startsWith(namePrefix))
   ) {
     throw new Error("b2_authorization_scope_mismatch");
   }
@@ -128,9 +146,16 @@ async function authorizeB2(force = false): Promise<B2Context> {
 
 async function fetchB2Object(
   key: string,
-  options: { range?: string; retryAuthorization?: boolean } = {},
+  options: {
+    range?: string;
+    retryAuthorization?: boolean;
+    verifiedOnly?: boolean;
+  } = {},
 ): Promise<Response> {
-  const objectKey = safeObjectKey(key);
+  const objectKey =
+    options.verifiedOnly === false
+      ? safeProjectObjectKey(key)
+      : safeVerifiedObjectKey(key);
   const context = await authorizeB2();
   const url =
     `${context.downloadUrl}/file/${encodeURIComponent(context.bucketName)}/` +
@@ -150,13 +175,23 @@ async function fetchB2Object(
     return fetchB2Object(objectKey, {
       range: options.range,
       retryAuthorization: false,
+      verifiedOnly: options.verifiedOnly,
     });
   }
   return response;
 }
 
 export async function getB2Json<T>(key: string): Promise<T> {
-  const response = await fetchB2Object(key);
+  return getJsonResponse<T>(await fetchB2Object(key));
+}
+
+export async function getB2ProjectJson<T>(key: string): Promise<T> {
+  return getJsonResponse<T>(
+    await fetchB2Object(key, { verifiedOnly: false }),
+  );
+}
+
+async function getJsonResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
     throw new Error(`b2_json_download_failed_${response.status}`);
   }
@@ -168,7 +203,16 @@ export async function getB2Json<T>(key: string): Promise<T> {
 }
 
 export async function listB2Files(prefix: string): Promise<B2File[]> {
-  const safePrefix = safeObjectKey(prefix);
+  return listFiles(safeVerifiedObjectKey(prefix));
+}
+
+export async function listB2ProjectFiles(
+  prefix: string,
+): Promise<B2File[]> {
+  return listFiles(safeProjectObjectKey(prefix));
+}
+
+async function listFiles(safePrefix: string): Promise<B2File[]> {
   const context = await authorizeB2();
   if (!context.capabilities.includes("listFiles")) return [];
 
@@ -193,13 +237,124 @@ export async function listB2Files(prefix: string): Promise<B2File[]> {
   return Array.isArray(payload.files) ? payload.files : [];
 }
 
+function digestHex(buffer: ArrayBuffer): string {
+  return Array.from(new Uint8Array(buffer), (byte) =>
+    byte.toString(16).padStart(2, "0"),
+  ).join("");
+}
+
+async function uploadUrl(context: B2Context): Promise<{
+  authorizationToken: string;
+  uploadUrl: string;
+}> {
+  if (!context.capabilities.includes("writeFiles")) {
+    throw new Error("b2_write_capability_missing");
+  }
+  const response = await fetch(
+    `${context.apiUrl}/b2api/v4/b2_get_upload_url`,
+    {
+      body: JSON.stringify({ bucketId: context.bucketId }),
+      cache: "no-store",
+      headers: {
+        Authorization: context.authorizationToken,
+        "Content-Type": "application/json",
+      },
+      method: "POST",
+    },
+  );
+  if (!response.ok) {
+    throw new Error(`b2_upload_url_failed_${response.status}`);
+  }
+  const payload = (await response.json()) as {
+    authorizationToken?: string;
+    uploadUrl?: string;
+  };
+  if (!payload.authorizationToken || !payload.uploadUrl) {
+    throw new Error("b2_upload_url_invalid");
+  }
+  return {
+    authorizationToken: payload.authorizationToken,
+    uploadUrl: payload.uploadUrl,
+  };
+}
+
+export async function putB2ProjectObject(
+  key: string,
+  bytes: Uint8Array,
+  contentType: string,
+): Promise<B2Upload> {
+  const objectKey = safeProjectObjectKey(key);
+  const context = await authorizeB2();
+  const upload = await uploadUrl(context);
+  const sha1 = digestHex(
+    await crypto.subtle.digest(
+      "SHA-1",
+      bytes.buffer.slice(
+        bytes.byteOffset,
+        bytes.byteOffset + bytes.byteLength,
+      ) as ArrayBuffer,
+    ),
+  );
+  const response = await fetch(upload.uploadUrl, {
+    body: bytes,
+    headers: {
+      Authorization: upload.authorizationToken,
+      "Content-Length": String(bytes.byteLength),
+      "Content-Type": contentType,
+      "X-Bz-Content-Sha1": sha1,
+      "X-Bz-File-Name": encodedFilePath(objectKey),
+    },
+    method: "POST",
+  });
+  if (!response.ok) {
+    throw new Error(`b2_upload_failed_${response.status}`);
+  }
+  const result = (await response.json()) as B2Upload;
+  if (
+    result.fileName !== objectKey ||
+    result.contentLength !== bytes.byteLength ||
+    result.contentSha1 !== sha1
+  ) {
+    throw new Error("b2_upload_verification_failed");
+  }
+  return result;
+}
+
+export async function putB2ProjectJson(
+  key: string,
+  value: unknown,
+): Promise<B2Upload> {
+  return putB2ProjectObject(
+    key,
+    new TextEncoder().encode(`${JSON.stringify(value, null, 2)}\n`),
+    "application/json",
+  );
+}
+
 export async function proxyB2Object(
   key: string,
   range?: string | null,
 ): Promise<Response> {
-  const upstream = await fetchB2Object(key, {
-    range: range ?? undefined,
-  });
+  return proxyResponse(
+    await fetchB2Object(key, {
+      range: range ?? undefined,
+    }),
+  );
+}
+
+export async function proxyB2ProjectObject(
+  key: string,
+  range?: string | null,
+): Promise<Response> {
+  return proxyResponse(
+    await fetchB2Object(key, {
+      range: range ?? undefined,
+      verifiedOnly: false,
+    }),
+  );
+}
+
+function proxyResponse(upstream: Response): Response {
   if (!upstream.ok && upstream.status !== 206) {
     return Response.json(
       { error: "verified_media_unavailable" },

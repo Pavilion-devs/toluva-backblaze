@@ -227,6 +227,28 @@ class ToluvaObjectKeys:
             f"{_opaque_id(version, 'version')}.json"
         )
 
+    def queue_request(self, scope: StorageScope) -> str:
+        self._assert_scope(scope)
+        return f"{scope.job_prefix}/queue/request.json"
+
+    def status_event(
+        self,
+        scope: StorageScope,
+        sequence: int,
+        stage: str,
+    ) -> str:
+        self._assert_scope(scope)
+        if sequence < 1 or sequence > 99:
+            raise ValueError("status event sequence must be between 1 and 99")
+        return (
+            f"{scope.job_prefix}/status/{sequence:02d}-"
+            f"{_opaque_id(stage, 'stage')}.json"
+        )
+
+    def status_prefix(self, scope: StorageScope) -> str:
+        self._assert_scope(scope)
+        return f"{scope.job_prefix}/status/"
+
     def stage_intent(self, scope: StorageScope, stage: str) -> str:
         self._assert_scope(scope)
         return (

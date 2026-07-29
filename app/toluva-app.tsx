@@ -5,11 +5,42 @@ import {
   VERIFIED_RUN_SNAPSHOT,
   type VerifiedRun,
 } from "../lib/verified-run";
+import {
+  MAX_CLIP_SECONDS,
+  MAX_UPLOAD_BYTES,
+  MIN_CLIP_SECONDS,
+  type JobEvent,
+  type JobState,
+} from "../lib/job-contract";
 
 type WorkspaceTab = "timeline" | "assets" | "provenance";
 type LanguageCode = "de" | "fr" | "es" | "ja";
 type MediaView = "source" | "final";
 type ConnectionState = "checking" | "live" | "snapshot";
+type UploadState =
+  | "idle"
+  | "inspecting"
+  | "ready"
+  | "uploading"
+  | "created"
+  | "error";
+
+type ActiveJob = {
+  events: JobEvent[];
+  finalAvailable: boolean;
+  jobId: string;
+  projectId: string;
+  request: {
+    created_at: string;
+    source_filename: string;
+    source_size_bytes: number;
+    target_language: string;
+  };
+  state: JobState;
+  statusUrl: string;
+};
+
+const ACTIVE_JOB_STORAGE_KEY = "toluva-active-b2-job";
 
 const languageOptions: Array<{
   code: LanguageCode;
@@ -63,6 +94,45 @@ async function fetchVerifiedRun(): Promise<VerifiedRun> {
   return payload.run;
 }
 
+async function inspectVideo(file: File): Promise<number> {
+  const objectUrl = URL.createObjectURL(file);
+  try {
+    return await new Promise<number>((resolve, reject) => {
+      const video = document.createElement("video");
+      video.preload = "metadata";
+      video.onloadedmetadata = () => {
+        const duration = video.duration;
+        if (!Number.isFinite(duration)) {
+          reject(new Error("clip_metadata_invalid"));
+          return;
+        }
+        resolve(duration);
+      };
+      video.onerror = () => reject(new Error("clip_metadata_invalid"));
+      video.src = objectUrl;
+    });
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
+async function fetchJobStatus(
+  statusUrl: string,
+): Promise<Omit<ActiveJob, "statusUrl">> {
+  const response = await fetch(statusUrl, {
+    cache: "no-store",
+    headers: { Accept: "application/json" },
+  });
+  const payload = (await response.json()) as {
+    job?: Omit<ActiveJob, "statusUrl">;
+    ok?: boolean;
+  };
+  if (!response.ok || !payload.ok || !payload.job) {
+    throw new Error("job_status_unavailable");
+  }
+  return payload.job;
+}
+
 function StatusMark({
   status,
 }: {
@@ -89,6 +159,7 @@ export function ToluvaApp() {
   const [mediaView, setMediaView] = useState<MediaView>("final");
   const [mediaError, setMediaError] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [intakeOpen, setIntakeOpen] = useState(false);
   const [requestedLanguage, setRequestedLanguage] =
     useState<LanguageCode>("de");
   const [purpose, setPurpose] = useState("internal-training");
@@ -97,6 +168,12 @@ export function ToluvaApp() {
   >("idle");
   const [selectedAsset, setSelectedAsset] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [sourceFile, setSourceFile] = useState<File | null>(null);
+  const [clipDuration, setClipDuration] = useState<number | null>(null);
+  const [uploadState, setUploadState] = useState<UploadState>("idle");
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [activeJob, setActiveJob] = useState<ActiveJob | null>(null);
+  const [statusWarning, setStatusWarning] = useState<string | null>(null);
 
   const refreshRun = useCallback(async () => {
     setConnection("checking");
@@ -131,6 +208,52 @@ export function ToluvaApp() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    const stored = window.sessionStorage.getItem(ACTIVE_JOB_STORAGE_KEY);
+    if (!stored) return;
+    try {
+      const handle = JSON.parse(stored) as {
+        jobId?: string;
+        projectId?: string;
+        statusUrl?: string;
+      };
+      if (!handle.jobId || !handle.projectId || !handle.statusUrl) return;
+      fetchJobStatus(handle.statusUrl)
+        .then((job) =>
+          setActiveJob({ ...job, statusUrl: handle.statusUrl! }),
+        )
+        .catch(() =>
+          setStatusWarning(
+            "The saved B2 job pointer could not be refreshed yet.",
+          ),
+        );
+    } catch {
+      window.sessionStorage.removeItem(ACTIVE_JOB_STORAGE_KEY);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (
+      !activeJob ||
+      ["completed", "failed", "blocked"].includes(activeJob.state)
+    ) {
+      return;
+    }
+    const interval = window.setInterval(() => {
+      fetchJobStatus(activeJob.statusUrl)
+        .then((job) => {
+          setActiveJob({ ...job, statusUrl: activeJob.statusUrl });
+          setStatusWarning(null);
+        })
+        .catch(() =>
+          setStatusWarning(
+            "Live status is temporarily unavailable; the B2 queue record is still durable.",
+          ),
+        );
+    }, 3000);
+    return () => window.clearInterval(interval);
+  }, [activeJob]);
 
   function openWorkbench(tab: WorkspaceTab) {
     setWorkspaceTab(tab);
@@ -176,6 +299,107 @@ export function ToluvaApp() {
     setAuthorizationResult("idle");
     setRequestedLanguage("de");
     setPurpose("internal-training");
+  }
+
+  function resetIntakeDialog() {
+    if (uploadState === "uploading") return;
+    setIntakeOpen(false);
+    setSourceFile(null);
+    setClipDuration(null);
+    setUploadState("idle");
+    setUploadError(null);
+  }
+
+  async function selectSourceFile(file: File | null) {
+    setSourceFile(null);
+    setClipDuration(null);
+    setUploadError(null);
+    if (!file) {
+      setUploadState("idle");
+      return;
+    }
+    if (file.type !== "video/mp4") {
+      setUploadState("error");
+      setUploadError("Choose an MP4 video.");
+      return;
+    }
+    if (file.size < 1 || file.size > MAX_UPLOAD_BYTES) {
+      setUploadState("error");
+      setUploadError("The MP4 must be no larger than 12 MB.");
+      return;
+    }
+
+    setUploadState("inspecting");
+    try {
+      const duration = await inspectVideo(file);
+      if (
+        duration < MIN_CLIP_SECONDS ||
+        duration > MAX_CLIP_SECONDS
+      ) {
+        throw new Error("clip_duration_out_of_range");
+      }
+      setSourceFile(file);
+      setClipDuration(duration);
+      setUploadState("ready");
+    } catch {
+      setUploadState("error");
+      setUploadError(
+        `Use a ${MIN_CLIP_SECONDS}–${MAX_CLIP_SECONDS} second MP4 with one English speech turn.`,
+      );
+    }
+  }
+
+  async function createLocalizationJob() {
+    if (!sourceFile || clipDuration === null) return;
+    setUploadState("uploading");
+    setUploadError(null);
+    try {
+      const form = new FormData();
+      form.set("source", sourceFile);
+      form.set("durationSeconds", clipDuration.toString());
+      form.set("targetLanguage", "de-DE");
+      form.set("purpose", "internal-training");
+      const response = await fetch("/api/jobs", {
+        body: form,
+        method: "POST",
+      });
+      const payload = (await response.json()) as {
+        job?: {
+          jobId: string;
+          projectId: string;
+          statusUrl: string;
+        };
+        message?: string;
+        ok?: boolean;
+      };
+      if (!response.ok || !payload.ok || !payload.job) {
+        throw new Error(payload.message ?? "job_creation_failed");
+      }
+      const job = await fetchJobStatus(payload.job.statusUrl);
+      const active = {
+        ...job,
+        statusUrl: payload.job.statusUrl,
+      };
+      setActiveJob(active);
+      window.sessionStorage.setItem(
+        ACTIVE_JOB_STORAGE_KEY,
+        JSON.stringify(payload.job),
+      );
+      setUploadState("created");
+      setIntakeOpen(false);
+      setNotice(
+        "Source and governed job request are now durably queued in Backblaze B2.",
+      );
+      setSourceFile(null);
+      setClipDuration(null);
+    } catch (error) {
+      setUploadState("error");
+      setUploadError(
+        error instanceof Error
+          ? error.message
+          : "The durable job could not be created.",
+      );
+    }
   }
 
   const sourceOrFinal =
@@ -292,11 +516,18 @@ export function ToluvaApp() {
                   : "VERIFIED SNAPSHOT"}
             </span>
             <button
-              className="button button-primary"
+              className="button button-secondary"
               onClick={() => openAuthorization()}
             >
               <span aria-hidden="true">↻</span>
-              Replay governed job
+              Replay proof
+            </button>
+            <button
+              className="button button-primary"
+              onClick={() => setIntakeOpen(true)}
+            >
+              <span aria-hidden="true">＋</span>
+              New localization
             </button>
           </div>
         </header>
@@ -310,6 +541,79 @@ export function ToluvaApp() {
                 ×
               </button>
             </div>
+          )}
+
+          {activeJob && (
+            <section
+              className={`job-progress job-${activeJob.state}`}
+              aria-labelledby="active-job-title"
+            >
+              <div className="job-progress-header">
+                <div>
+                  <span className="meta-label">DURABLE B2 JOB</span>
+                  <h2 id="active-job-title">
+                    {activeJob.request.source_filename}
+                  </h2>
+                  <p>
+                    English → German · {activeJob.jobId.slice(0, 18)}…
+                  </p>
+                </div>
+                <span className={`job-state state-${activeJob.state}`}>
+                  <i />
+                  {activeJob.state}
+                </span>
+              </div>
+              <div className="job-event-track">
+                {activeJob.events.map((event) => (
+                  <article key={`${event.sequence}-${event.stage}`}>
+                    <span>{String(event.sequence).padStart(2, "0")}</span>
+                    <div>
+                      <strong>{event.label}</strong>
+                      <small>{event.message}</small>
+                    </div>
+                  </article>
+                ))}
+              </div>
+              <div className="job-progress-footer">
+                <span>
+                  {activeJob.finalAvailable
+                    ? "Final record is available in B2."
+                    : "Polling append-only B2 stage records every 3 seconds."}
+                </span>
+                {statusWarning && <strong>{statusWarning}</strong>}
+              </div>
+              {activeJob.finalAvailable && (
+                <div className="job-output">
+                  <div>
+                    <span className="meta-label">NEW LOCALIZED OUTPUT</span>
+                    <strong>German edition · verified from B2</strong>
+                    <small>
+                      The player resolves media only from this job&apos;s
+                      immutable final record.
+                    </small>
+                  </div>
+                  <video
+                    controls
+                    preload="metadata"
+                    src={
+                      `/api/job-media?project=${activeJob.projectId}` +
+                      `&job=${activeJob.jobId}&kind=final`
+                    }
+                  >
+                    <track
+                      default
+                      kind="captions"
+                      label="Deutsch"
+                      srcLang="de"
+                      src={
+                        `/api/job-media?project=${activeJob.projectId}` +
+                        `&job=${activeJob.jobId}&kind=captions`
+                      }
+                    />
+                  </video>
+                </div>
+              )}
+            </section>
           )}
 
           <section className="project-intro" aria-labelledby="project-title">
@@ -979,6 +1283,130 @@ export function ToluvaApp() {
                 {authorizationResult === "approved"
                   ? "Load completed B2 job"
                   : "Check authorization"}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {intakeOpen && (
+        <div className="dialog-backdrop" role="presentation">
+          <section
+            aria-labelledby="intake-title"
+            aria-modal="true"
+            className="dialog intake-dialog"
+            role="dialog"
+          >
+            <div className="dialog-header">
+              <div>
+                <span className="meta-label">GOVERNED ENGINE INTAKE</span>
+                <h2 id="intake-title">Queue a real localization</h2>
+              </div>
+              <button
+                aria-label="Close upload dialog"
+                className="dialog-close"
+                disabled={uploadState === "uploading"}
+                onClick={resetIntakeDialog}
+              >
+                ×
+              </button>
+            </div>
+
+            <p className="dialog-intro">
+              This first live lane accepts one short English speech turn,
+              verifies the German internal-training authorization, and writes
+              the source plus immutable job request to Backblaze B2.
+            </p>
+
+            <label className="upload-field">
+              <span>Source MP4</span>
+              <input
+                accept="video/mp4,.mp4"
+                disabled={uploadState === "uploading"}
+                onChange={(event) =>
+                  void selectSourceFile(event.target.files?.[0] ?? null)
+                }
+                type="file"
+              />
+              <small>
+                1–8 seconds · maximum 12 MB · single English speaker · must say
+                “Toluva”
+              </small>
+            </label>
+
+            {uploadState === "inspecting" && (
+              <div className="upload-readout upload-reading">
+                Inspecting the local clip before upload…
+              </div>
+            )}
+
+            {sourceFile && clipDuration !== null && (
+              <div className="upload-readout upload-ready">
+                <span>✓</span>
+                <div>
+                  <strong>{sourceFile.name}</strong>
+                  <small>
+                    {clipDuration.toFixed(2)} seconds ·{" "}
+                    {(sourceFile.size / 1024 / 1024).toFixed(2)} MB
+                  </small>
+                </div>
+              </div>
+            )}
+
+            {uploadError && (
+              <div className="upload-readout upload-failed" role="alert">
+                <span>!</span>
+                <div>
+                  <strong>Intake stopped safely</strong>
+                  <small>{uploadError}</small>
+                </div>
+              </div>
+            )}
+
+            <div className="intake-contract">
+              <div>
+                <span>Language</span>
+                <strong>German · DE-DE</strong>
+              </div>
+              <div>
+                <span>Purpose</span>
+                <strong>Internal training</strong>
+              </div>
+              <div>
+                <span>Voice</span>
+                <strong>Disclosed stock synthetic</strong>
+              </div>
+              <div>
+                <span>Protected term</span>
+                <strong>Toluva</strong>
+              </div>
+            </div>
+
+            <div className="policy-scope">
+              <span>WRITE CONTRACT</span>
+              <strong>SOURCE → QUEUE REQUEST → STATUS EVENTS</strong>
+              <small>
+                Credentials remain server-side. Creating the job does not call
+                ElevenLabs.
+              </small>
+            </div>
+
+            <div className="dialog-actions">
+              <button
+                className="button button-quiet"
+                disabled={uploadState === "uploading"}
+                onClick={resetIntakeDialog}
+              >
+                Cancel
+              </button>
+              <button
+                className="button button-primary"
+                disabled={uploadState !== "ready"}
+                onClick={() => void createLocalizationJob()}
+              >
+                {uploadState === "uploading"
+                  ? "Writing durable job…"
+                  : "Queue in Backblaze B2"}
               </button>
             </div>
           </section>

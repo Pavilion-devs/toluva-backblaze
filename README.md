@@ -60,6 +60,12 @@ Genblaze, and stores verified media and provenance in B2.
 - Source/final playback with WebVTT captions, completed-job replay from B2,
   and an honest verified-snapshot fallback when the live read is unavailable
 - A FastAPI boundary for health, authorization, timing, and local spike runs
+- A governed 1–8 second MP4 intake that writes source, source record, immutable
+  queue request, and first status event directly to Backblaze B2
+- A B2 queue consumer that validates the uploaded source hash, runs the real
+  Genblaze engine, and appends 12 visible progress stages
+- Refresh-safe job polling and completed-job playback resolved from the new
+  job's immutable final record
 
 ## Run locally
 
@@ -96,8 +102,9 @@ See `services/pipeline/README.md` for the API and credential-readiness commands.
   encrypted runtime secrets; ElevenLabs remains worker-only.
 - Credential values are absent from tracked files.
 - The Python generation worker still runs separately from the hosted web app.
-  The UI can inspect and replay the completed B2 job without a model call, but
-  it cannot yet launch a new long-running localization job.
+  The UI now launches a durable B2 job and can display its live status and
+  completed media. The worker consumer is currently operator-run; an always-on
+  external Python host remains required for unattended public execution.
 - The new transcript and German translation are genuine model outputs, not
   scripted fixtures. The source video is a clearly labelled, locally generated
   development sample; an entrant-owned or licensed final demo video is still

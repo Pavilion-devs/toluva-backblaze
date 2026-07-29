@@ -213,3 +213,36 @@ The configured ElevenLabs key is currently permitted for TTS but returned
 HTTP 401 for Scribe STT. That failure is retained as an inspectable checkpoint.
 Toluva therefore uses the pinned local Whisper path for the working pipeline
 instead of requesting another credential or silently retrying.
+
+## Durable B2 queue worker
+
+The hosted application can create a fresh upload job without holding open a
+generation request. It writes an immutable queue request to B2. To claim the
+oldest unclaimed request and process at most one job:
+
+```bash
+PYTHONPATH=services/pipeline/src \
+  services/pipeline/.venv/bin/python -m toluva_pipeline.cli \
+  queue-worker --once --confirm-spend
+```
+
+To process or safely resume one exact opaque handle:
+
+```bash
+PYTHONPATH=services/pipeline/src \
+  services/pipeline/.venv/bin/python -m toluva_pipeline.cli \
+  queue-worker \
+  --project-id intake-00000000000000000000000000000000 \
+  --job-id localize-00000000000000000000000000000000 \
+  --confirm-spend
+```
+
+The explicit flag is still required because a fresh job makes one ElevenLabs
+call. Before execution the worker verifies the request contract, B2 source key,
+byte count, and SHA-256. It then emits one append-only B2 event per stage. An
+exact replay of a completed job returns the final checkpoint without rerunning
+Whisper, Argos, ElevenLabs, or FFmpeg.
+
+The consumer is ready for a persistent Python process, but no always-on external
+worker host is configured yet. Until that host is selected, the hosted app
+honestly leaves new requests queued when the operator-run worker is offline.

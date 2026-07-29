@@ -10,6 +10,7 @@ import tempfile
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Callable
 from urllib.parse import unquote, urlparse
 
 from genblaze_core import (
@@ -69,6 +70,7 @@ E2E_AUTHORIZATION_ID = "auth-stock-live-v1"
 ARGOS_MODEL = "translate-en_de-1_3"
 WHISPER_MODEL = "whisper-base-en"
 WHISPER_MODEL_REVISION = "88b03866a4066bb4a97c12258abb82b1e9af0121"
+ProgressCallback = Callable[[str, str], None]
 
 
 class EndToEndIntegrityError(RuntimeError):
@@ -355,7 +357,9 @@ def _existing_report(
     *,
     backend: object,
     final_record_key: str,
+    project_id: str,
     job_id: str,
+    version: str,
 ) -> LiveEndToEndReport | None:
     if not backend.exists(final_record_key):
         return None
@@ -365,8 +369,9 @@ def _existing_report(
     local_path = (
         settings.work_dir
         / "vertical-slice"
+        / project_id
         / job_id
-        / E2E_VERSION
+        / version
         / "localized-de.mp4"
     ).resolve()
     payload["local_output_path"] = str(local_path)
@@ -383,25 +388,43 @@ def run_live_end_to_end(
     settings: Settings,
     *,
     job_id: str = E2E_JOB_ID,
+    project_id: str = E2E_PROJECT_ID,
+    source_asset_id: str = E2E_SOURCE_ASSET_ID,
+    authorization_id: str = E2E_AUTHORIZATION_ID,
+    protected_terms: tuple[str, ...] = E2E_PROTECTED_TERMS,
+    create_development_source_if_missing: bool = True,
+    development_sample: bool = True,
+    source_kind: str = "locally-generated-development-sample",
+    version: str = E2E_VERSION,
+    on_progress: ProgressCallback | None = None,
 ) -> LiveEndToEndReport:
     """Run or safely reuse the first fixture-free localized video."""
+
+    def progress(stage: str, message: str) -> None:
+        if on_progress is not None:
+            on_progress(stage, message)
 
     if not settings.elevenlabs_ready:
         raise CredentialConfigurationError("ELEVENLABS_API_KEY is not configured")
     if not settings.b2_ready:
         raise CredentialConfigurationError("Backblaze B2 is not configured")
+    if not protected_terms:
+        raise ValueError("At least one protected term is required")
 
-    scope = StorageScope(E2E_PROJECT_ID, job_id, E2E_LANGUAGE)
-    keys = ToluvaObjectKeys(E2E_PROJECT_ID)
+    scope = StorageScope(project_id, job_id, E2E_LANGUAGE)
+    keys = ToluvaObjectKeys(project_id)
     storage = build_b2_storage(settings, scope, preflight=True)
-    final_record_key = keys.final_record(scope, E2E_VERSION)
+    final_record_key = keys.final_record(scope, version)
     existing = _existing_report(
         settings,
         backend=storage.backend,
         final_record_key=final_record_key,
+        project_id=project_id,
         job_id=job_id,
+        version=version,
     )
     if existing is not None:
+        progress("completed", "Reused the verified final B2 checkpoint.")
         return existing
 
     argos_packages = (
@@ -420,13 +443,13 @@ def run_live_end_to_end(
             "Pinned local Whisper model is not installed in Toluva work storage"
         )
 
-    source_key = keys.source_master(E2E_SOURCE_ASSET_ID, "mp4")
-    source_record_key = keys.source_record(E2E_SOURCE_ASSET_ID)
-    source_version = f"{E2E_VERSION}-{job_id}"
+    source_key = keys.source_master(source_asset_id, "mp4")
+    source_record_key = keys.source_record(source_asset_id)
+    source_version = f"{version}-{job_id}"
     transcript_key = keys.transcript(source_version)
     segments_key = keys.segments(source_version)
-    captions_key = keys.captions(scope, E2E_VERSION)
-    disclosure_key = keys.disclosure(scope, E2E_VERSION)
+    captions_key = keys.captions(scope, version)
+    disclosure_key = keys.disclosure(scope, version)
     stage_journal = B2StageJournal(
         storage.backend,
         keys=keys,
@@ -441,6 +464,10 @@ def run_live_end_to_end(
             source_path.write_bytes(storage.backend.get(source_key))
             resumed.append("source-ingest")
         else:
+            if not create_development_source_if_missing:
+                raise EndToEndIntegrityError(
+                    "Queued source media is missing from B2"
+                )
             _create_development_source(source_path, temp_root=temp_root)
             source_bytes = source_path.read_bytes()
             put_immutable(
@@ -456,10 +483,10 @@ def run_live_end_to_end(
                     {
                         "schema_version": "1.0",
                         "record_type": "source_ingest",
-                        "source_kind": "locally-generated-development-sample",
+                        "source_kind": source_kind,
                         "source_generation_tool": "macos-system-voice",
                         "expected_source_text": E2E_SOURCE_TEXT,
-                        "not_final_demo_asset": True,
+                        "not_final_demo_asset": development_sample,
                         "b2_key": source_key,
                         "sha256": _sha256(source_bytes),
                         "duration_seconds": probe_duration(source_path),
@@ -471,10 +498,22 @@ def run_live_end_to_end(
         source = _source_asset(source_path, source_key)
         if _sha256(source_path.read_bytes()) != source.sha256:
             raise EndToEndIntegrityError("Source media failed hash verification")
+        if (
+            not create_development_source_if_missing
+            and not 1.0 <= float(source.duration) <= 8.05
+        ):
+            raise EndToEndIntegrityError(
+                "Queued source duration must be between 1 and 8 seconds"
+            )
+        progress("source-ready", "Verified the uploaded MP4 against its B2 bytes.")
 
         transcription_stage = "transcription-whisper-base-en"
         transcription_checkpoint = stage_journal.completion(transcription_stage)
         if transcription_checkpoint is None:
+            progress(
+                "transcribing",
+                "Running pinned local Whisper through a Genblaze stage.",
+            )
             transcription_idempotency = _sha256(
                 f"{job_id}\0{source.sha256}\0{WHISPER_MODEL_REVISION}".encode()
             )
@@ -494,7 +533,7 @@ def run_live_end_to_end(
                     Pipeline(
                         "toluva-live-transcription",
                         tenant_id="toluva-demo",
-                        project_id=E2E_PROJECT_ID,
+                        project_id=project_id,
                         preflight=False,
                     )
                     .metadata(
@@ -515,7 +554,7 @@ def run_live_end_to_end(
                             "operation": "timed_transcription",
                             "live_model": True,
                         },
-                        keyterms=list(E2E_PROTECTED_TERMS),
+                        keyterms=list(protected_terms),
                     )
                     .run(
                         sink=transcription_sink,
@@ -562,9 +601,29 @@ def run_live_end_to_end(
             media_duration_seconds=float(source.duration),
             source="faster-whisper-base-en-live",
         )
-        if len(timed_transcript.segments) != 1:
+        if len(timed_transcript.segments) == 0:
             raise EndToEndIntegrityError(
-                "The bounded development source must produce exactly one segment"
+                "The bounded source produced no speech segment"
+            )
+        if len(timed_transcript.segments) > 1:
+            first = timed_transcript.segments[0]
+            last = timed_transcript.segments[-1]
+            timed_transcript = TimedTranscript(
+                language=timed_transcript.language,
+                source=timed_transcript.source,
+                source_asset_sha256=timed_transcript.source_asset_sha256,
+                segments=(
+                    TimedSegment(
+                        segment_id="segment-001",
+                        start_seconds=first.start_seconds,
+                        end_seconds=last.end_seconds,
+                        text=" ".join(
+                            segment.text.strip()
+                            for segment in timed_transcript.segments
+                        ),
+                        speaker_id=first.speaker_id,
+                    ),
+                ),
             )
         normalized_transcript = {
             "schema_version": "1.0",
@@ -593,14 +652,22 @@ def run_live_end_to_end(
             content_type="application/json",
         )
         source_segment = timed_transcript.segments[0]
-        if "Toluva" not in source_segment.text:
+        if any(term not in source_segment.text for term in protected_terms):
             raise EndToEndIntegrityError(
-                "Live transcription did not preserve the protected product name"
+                "Live transcription did not preserve every protected term"
             )
+        progress(
+            "transcribed",
+            "Stored the timed transcript and protected-term decision in B2.",
+        )
 
         translation_stage = "translation-argos-en-de"
         translation_checkpoint = stage_journal.completion(translation_stage)
         if translation_checkpoint is None:
+            progress(
+                "translating",
+                "Translating English to German with the pinned offline model.",
+            )
             translation_idempotency = _sha256(
                 f"{job_id}\0{source_segment.text}\0{ARGOS_MODEL}".encode()
             )
@@ -615,7 +682,7 @@ def run_live_end_to_end(
                 prefix=keys.translation_genblaze_prefix(
                     scope,
                     source_segment.segment_id,
-                    E2E_VERSION,
+                    version,
                 ),
                 key_strategy=KeyStrategy.HIERARCHICAL,
             )
@@ -624,7 +691,7 @@ def run_live_end_to_end(
                     Pipeline(
                         "toluva-live-translation",
                         tenant_id="toluva-demo",
-                        project_id=E2E_PROJECT_ID,
+                        project_id=project_id,
                         preflight=False,
                     )
                     .metadata(
@@ -643,7 +710,7 @@ def run_live_end_to_end(
                         },
                         source_language="en",
                         target_language="de",
-                        protected_terms=list(E2E_PROTECTED_TERMS),
+                        protected_terms=list(protected_terms),
                     )
                     .run(
                         sink=translation_sink,
@@ -682,10 +749,14 @@ def run_live_end_to_end(
             raise EndToEndIntegrityError("Stored translation asset hash changed")
         translation_payload = json.loads(translation_bytes)
         translated_text = str(translation_payload["translated_text"]).strip()
-        if any(term not in translated_text for term in E2E_PROTECTED_TERMS):
+        if any(term not in translated_text for term in protected_terms):
             raise EndToEndIntegrityError(
                 "Stored translation lost a protected term"
             )
+        progress(
+            "translated",
+            "Verified the German translation and its Genblaze manifest.",
+        )
 
         now = datetime.now(UTC)
         evidence = (
@@ -694,7 +765,7 @@ def run_live_end_to_end(
         )
         evidence_sha256 = _sha256(evidence)
         authorization = VoiceAuthorization(
-            authorization_id=E2E_AUTHORIZATION_ID,
+            authorization_id=authorization_id,
             speaker_id="elevenlabs-stock-voice",
             voice_profile_id=DEFAULT_STOCK_VOICE_ID,
             voice_type=VoiceType.STOCK,
@@ -717,11 +788,11 @@ def run_live_end_to_end(
             ),
         )
         evidence_key = keys.authorization_evidence(
-            E2E_AUTHORIZATION_ID,
+            authorization_id,
             authorization.evidence_asset_id,
             "txt",
         )
-        authorization_key = keys.authorization_record(E2E_AUTHORIZATION_ID)
+        authorization_key = keys.authorization_record(authorization_id)
         put_immutable(
             storage.backend,
             evidence_key,
@@ -745,6 +816,10 @@ def run_live_end_to_end(
             ),
             content_type="application/json",
         )
+        progress(
+            "authorized",
+            "Voice language and internal-training purpose passed before TTS.",
+        )
 
         timing_summary_key = keys.timing_summary(
             scope,
@@ -754,6 +829,10 @@ def run_live_end_to_end(
             timing_summary = json.loads(storage.backend.get(timing_summary_key))
             resumed.append("timing-correction")
         else:
+            progress(
+                "synthesizing",
+                "Generating disclosed German speech through Genblaze and ElevenLabs.",
+            )
             correction_journal = B2CorrectionJournal(
                 storage.backend,
                 keys=keys,
@@ -766,7 +845,7 @@ def run_live_end_to_end(
                     backend=storage.backend,
                     scope=scope,
                     keys=keys,
-                    authorization_id=E2E_AUTHORIZATION_ID,
+                    authorization_id=authorization_id,
                     authorization_code=authorization_decision.code.value,
                     language=E2E_LANGUAGE,
                     language_code="de",
@@ -785,7 +864,7 @@ def run_live_end_to_end(
             )
             correction_outcome = correction_engine.run(
                 TimingCorrectionRequest(
-                    project_id=E2E_PROJECT_ID,
+                    project_id=project_id,
                     job_id=job_id,
                     segment_id=source_segment.segment_id,
                     source_text=source_segment.text,
@@ -794,7 +873,7 @@ def run_live_end_to_end(
                     target_language="German",
                     target_seconds=source_segment.end_seconds
                     - source_segment.start_seconds,
-                    protected_terms=E2E_PROTECTED_TERMS,
+                    protected_terms=protected_terms,
                 )
             )
             timing_summary = {
@@ -802,6 +881,10 @@ def run_live_end_to_end(
                 "record_type": "timing_correction_summary",
                 **correction_outcome.to_dict(),
             }
+        progress(
+            "timing-qa",
+            "Measured generated speech and selected the bounded timing action.",
+        )
 
         speech = _selected_speech(timing_summary)
         speech_bytes = _assert_speech_integrity(storage.backend, speech)
@@ -841,7 +924,7 @@ def run_live_end_to_end(
 
         composition_sink = ObjectStorageSink(
             storage.backend,
-            prefix=keys.composition_genblaze_prefix(scope, E2E_VERSION),
+            prefix=keys.composition_genblaze_prefix(scope, version),
             key_strategy=KeyStrategy.HIERARCHICAL,
         )
         audio_asset = Asset(
@@ -873,11 +956,15 @@ def run_live_end_to_end(
             if assets:
                 local_composition_outputs.append(assets[0].url)
 
+        progress(
+            "composing",
+            "Fanning source video, selected speech, and captions into the final MP4.",
+        )
         composition_result = (
             Pipeline(
                 "toluva-live-localized-composition",
                 tenant_id="toluva-demo",
-                project_id=E2E_PROJECT_ID,
+                project_id=project_id,
                 preflight=False,
             )
             .metadata(
@@ -933,7 +1020,11 @@ def run_live_end_to_end(
             )
 
         durable_dir = (
-            settings.work_dir / "vertical-slice" / job_id / E2E_VERSION
+            settings.work_dir
+            / "vertical-slice"
+            / project_id
+            / job_id
+            / version
         ).resolve()
         durable_dir.mkdir(parents=True, exist_ok=False)
         durable_output = durable_dir / "localized-de.mp4"
@@ -947,12 +1038,12 @@ def run_live_end_to_end(
             "voice_type": "stock",
             "voice_provider": "elevenlabs-tts",
             "voice_model": DEFAULT_MODEL,
-            "authorization_id": E2E_AUTHORIZATION_ID,
+            "authorization_id": authorization_id,
             "language": E2E_LANGUAGE,
             "source_transcription_provider": "faster-whisper-local",
             "translation_provider": "argos-translate-offline",
             "human_approval_required_before_publish": True,
-            "development_sample": True,
+            "development_sample": development_sample,
         }
         put_immutable(
             storage.backend,
@@ -962,7 +1053,7 @@ def run_live_end_to_end(
         )
 
         report = LiveEndToEndReport(
-            project_id=E2E_PROJECT_ID,
+            project_id=project_id,
             job_id=job_id,
             source_language=E2E_SOURCE_LANGUAGE,
             target_language=E2E_LANGUAGE,
@@ -1022,4 +1113,8 @@ def run_live_end_to_end(
             content_type="application/json",
         )
         (durable_dir / "report.json").write_bytes(_json_bytes(report.to_dict()))
+        progress(
+            "completed",
+            "Verified the final B2 bytes and published the immutable final record.",
+        )
         return report

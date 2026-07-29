@@ -41,6 +41,7 @@ test("server-renders the Toluva product shell", async () => {
   assert.match(html, /Backblaze B2/);
   assert.match(html, /Genblaze/);
   assert.match(html, /Willkommen bei Toluva/);
+  assert.match(html, /New localization/);
   assert.doesNotMatch(html, /Leadership onboarding/);
   assert.doesNotMatch(html, /prepared demonstration data/i);
   assert.doesNotMatch(html, /codex-preview/);
@@ -64,6 +65,27 @@ test("rejects media kinds outside the verified allowlist", async () => {
   assert.equal(response.status, 400);
   assert.deepEqual(await response.json(), {
     error: "unsupported_verified_media_kind",
+  });
+});
+
+test("rejects malformed durable job handles before a B2 read", async () => {
+  const response = await render(
+    "/api/job-status?project=../../private&job=not-a-job",
+  );
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), {
+    error: "invalid_job_handle",
+    ok: false,
+  });
+});
+
+test("rejects malformed completed-job media requests", async () => {
+  const response = await render(
+    "/api/job-media?project=bad&job=bad&kind=private",
+  );
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), {
+    error: "invalid_job_media_request",
   });
 });
 
