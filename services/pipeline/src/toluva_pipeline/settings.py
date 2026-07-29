@@ -47,8 +47,8 @@ class Settings:
     elevenlabs_api_key: str | None = field(repr=False)
     assemblyai_api_key: str | None = field(repr=False)
     openai_api_key: str | None = field(repr=False)
-    worker_poll_seconds: float = 5.0
-    worker_heartbeat_seconds: int = 30
+    worker_poll_seconds: float = 60.0
+    worker_heartbeat_seconds: int = 60
     worker_stale_claim_seconds: int = 90
     worker_replica_count: int = 1
     worker_allow_provider_spend: bool = False
@@ -71,9 +71,9 @@ class Settings:
             elevenlabs_api_key=os.getenv("ELEVENLABS_API_KEY"),
             assemblyai_api_key=os.getenv("ASSEMBLYAI_API_KEY"),
             openai_api_key=os.getenv("OPENAI_API_KEY"),
-            worker_poll_seconds=_env_float("TOLUVA_WORKER_POLL_SECONDS", 5.0),
+            worker_poll_seconds=_env_float("TOLUVA_WORKER_POLL_SECONDS", 60.0),
             worker_heartbeat_seconds=_env_int(
-                "TOLUVA_WORKER_HEARTBEAT_SECONDS", 30
+                "TOLUVA_WORKER_HEARTBEAT_SECONDS", 60
             ),
             worker_stale_claim_seconds=_env_int(
                 "TOLUVA_WORKER_STALE_CLAIM_SECONDS", 90

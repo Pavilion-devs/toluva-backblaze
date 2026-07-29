@@ -29,7 +29,9 @@ from toluva_pipeline.storage.keys import StorageScope
 WORKER_HEARTBEAT_KEY = (
     "projects/system-runtime/workers/primary/heartbeat.json"
 )
-WORKER_ENGINE_VERSION = "queue-v1"
+WORKER_ENGINE_VERSION = "queue-v2"
+MIN_WORKER_POLL_SECONDS = 60
+MIN_WORKER_HEARTBEAT_SECONDS = 60
 EXPECTED_WHISPER_SHA256 = (
     "2a166925539a16005f14ff328359f9b9adb9dc4fb631bb3b227526862e93e2ef"
 )
@@ -84,8 +86,9 @@ def worker_readiness(
                 settings.elevenlabs_ready,
                 settings.worker_allow_provider_spend,
                 settings.worker_replica_count == 1,
-                settings.worker_poll_seconds >= 1,
-                settings.worker_heartbeat_seconds >= 10,
+                settings.worker_poll_seconds >= MIN_WORKER_POLL_SECONDS,
+                settings.worker_heartbeat_seconds
+                >= MIN_WORKER_HEARTBEAT_SECONDS,
                 settings.worker_stale_claim_seconds >= 30,
                 which("ffmpeg"),
                 which("ffprobe"),
@@ -211,10 +214,16 @@ class QueueWorkerRuntime:
         self._state = WorkerState("starting")
         self._state_lock = threading.Lock()
 
-    def _set_state(self, state: WorkerState) -> None:
+    def _set_state(
+        self,
+        state: WorkerState,
+        *,
+        publish: bool = False,
+    ) -> None:
         with self._state_lock:
             self._state = state
-        self._publisher.publish(state)
+        if publish:
+            self._publisher.publish(state)
 
     def _current_state(self) -> WorkerState:
         with self._state_lock:
@@ -253,7 +262,8 @@ class QueueWorkerRuntime:
                 "processing",
                 project_id=project_id,
                 job_id=job_id,
-            )
+            ),
+            publish=True,
         )
         try:
             report = self._processor(
@@ -262,14 +272,14 @@ class QueueWorkerRuntime:
                 job_id=job_id,
             )
         except Exception as exc:
-            self._set_state(WorkerState("idle"))
+            self._set_state(WorkerState("idle"), publish=True)
             return {
                 "status": "failed",
                 "project_id": project_id,
                 "job_id": job_id,
                 "error_type": type(exc).__name__,
             }
-        self._set_state(WorkerState("idle"))
+        self._set_state(WorkerState("idle"), publish=True)
         return {
             "status": "completed",
             "project_id": project_id,
@@ -278,7 +288,7 @@ class QueueWorkerRuntime:
         }
 
     def run_forever(self, stop: threading.Event) -> None:
-        self._set_state(WorkerState("idle"))
+        self._set_state(WorkerState("idle"), publish=True)
         heartbeat = threading.Thread(
             target=self._heartbeat_loop,
             args=(stop,),
@@ -318,7 +328,7 @@ class QueueWorkerRuntime:
         finally:
             stop.set()
             heartbeat.join(timeout=2)
-            self._set_state(WorkerState("stopped"))
+            self._set_state(WorkerState("stopped"), publish=True)
 
 
 def build_worker_runtime(settings: Settings) -> QueueWorkerRuntime:

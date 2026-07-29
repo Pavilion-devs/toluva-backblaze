@@ -30,10 +30,15 @@ pre-existing service.
 - `toluva-worker.service` — systemd unit that owns the one container replica
 - `worker.env.example` — secret-free runtime contract
 
-The deployed image is `toluva-worker:8cf07b9`, built from the repository's
-checked-in Dockerfile. It contains Python 3.12.13, the locked CPU-only Python
-environment, FFmpeg/FFprobe, the pinned Faster Whisper model, and the pinned
-Argos English-to-German model.
+The current deployment image is `toluva-worker:queue-v2-6c78a0e`, built from
+the repository's checked-in Dockerfile. It contains Python 3.12.13, the locked
+CPU-only Python environment, FFmpeg/FFprobe, the pinned Faster Whisper model,
+and the pinned Argos English-to-German model.
+
+The worker polls and publishes its lease every 60 seconds. An idle queue scan
+uses one paginated B2 listing snapshot and must not perform per-job `HEAD` or
+`GET` requests. Idle state changes remain in process memory between heartbeat
+publications.
 
 ## Pre-deployment checks
 
@@ -53,7 +58,7 @@ Installing or starting Toluva must not require a reboot.
 1. Install Docker from the Ubuntu package repository without upgrading or
    restarting unrelated services.
 2. Load the verified `linux/amd64` image and tag it
-   `toluva-worker:8cf07b9`.
+   `toluva-worker:queue-v2-6c78a0e`.
 3. Create `/etc/toluva/worker.env` from `worker.env.example`, insert only the
    scoped B2 credential and ElevenLabs key, and set mode `0600`.
 4. Copy `toluva-worker.service` to `/etc/systemd/system/`.
@@ -106,6 +111,19 @@ immediately. Additional orderly restarts happened while separate Dara
 regeneration traffic was active; the kernel reported no OOM. Future Toluva
 maintenance must not reinstall or remove Docker, reboot the host, or touch the
 unrelated service units.
+
+## Queue-v2 maintenance record — July 29, 2026
+
+- A controlled production preflight found that the original five-second idle
+  loop exhausted the bucket's configured Class B/download transaction cap.
+  The cap blocked a source read before any new ElevenLabs call was made.
+- Queue v2 derives claim and terminal state from the existing B2 listing
+  snapshot. A final record, completed event, or failed event prevents reclaim
+  without a separate object read.
+- Polling and heartbeat publication are both fixed at a minimum of 60 seconds.
+  The worker no longer uploads heartbeat state twice on every idle poll.
+- The local `linux/amd64` image passed secret-safe readiness, both pinned model
+  hashes, and the complete 87-test pipeline suite before deployment.
 
 ## Rollback
 

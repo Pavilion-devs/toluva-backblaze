@@ -15,11 +15,16 @@ from toluva_pipeline.storage.keys import StorageScope, ToluvaObjectKeys
 class MemoryBackend:
     def __init__(self) -> None:
         self.objects: dict[str, bytes] = {}
+        self.exists_calls = 0
+        self.get_calls = 0
+        self.list_calls = 0
 
     def exists(self, key: str) -> bool:
+        self.exists_calls += 1
         return key in self.objects
 
     def get(self, key: str) -> bytes:
+        self.get_calls += 1
         return self.objects[key]
 
     def put(self, key: str, data: bytes, *, content_type: str) -> None:
@@ -30,7 +35,10 @@ class MemoryBackend:
         prefix: str,
         *,
         max_keys: int,
+        continuation_token: str | None = None,
     ) -> SimpleNamespace:
+        self.list_calls += 1
+        assert continuation_token is None
         entries = tuple(
             SimpleNamespace(
                 key=key,
@@ -173,3 +181,31 @@ def test_completed_or_failed_jobs_are_never_reclaimed() -> None:
             )
             is None
         )
+        assert backend.list_calls == 1
+        assert backend.exists_calls == 0
+        assert backend.get_calls == 0
+
+
+def test_final_record_is_a_terminal_queue_marker() -> None:
+    backend = MemoryBackend()
+    payload = request_payload()
+    scope = StorageScope(
+        str(payload["project_id"]),
+        str(payload["job_id"]),
+        "de-DE",
+    )
+    keys = ToluvaObjectKeys(scope.project_id)
+    backend.objects[keys.queue_request(scope)] = json.dumps(payload).encode()
+    backend.objects[keys.final_record(scope, "live-v1")] = b"{}"
+
+    assert (
+        find_next_runnable_job(
+            backend,  # type: ignore[arg-type]
+            now=datetime(2026, 7, 29, 13, 0, tzinfo=UTC),
+            stale_claim_seconds=90,
+        )
+        is None
+    )
+    assert backend.list_calls == 1
+    assert backend.exists_calls == 0
+    assert backend.get_calls == 0

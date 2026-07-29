@@ -34,7 +34,9 @@ class MemoryBackend:
         prefix: str,
         *,
         max_keys: int,
+        continuation_token: str | None = None,
     ) -> SimpleNamespace:
+        assert continuation_token is None
         entries = tuple(
             SimpleNamespace(
                 key=key,
@@ -151,3 +153,16 @@ def test_runtime_processes_one_job_and_returns_to_idle() -> None:
     assert calls == [(scope.project_id, scope.job_id)]
     heartbeat = json.loads(backend.objects[WORKER_HEARTBEAT_KEY])
     assert heartbeat["state"] == "idle"
+
+
+def test_idle_poll_does_not_republish_the_heartbeat() -> None:
+    backend = MemoryBackend()
+    runtime = QueueWorkerRuntime(
+        settings(),
+        backend=backend,  # type: ignore[arg-type]
+        clock=lambda: datetime(2026, 7, 29, 12, 0, tzinfo=UTC),
+        worker_id="worker-test",
+    )
+
+    assert runtime.run_once() == {"status": "idle"}
+    assert WORKER_HEARTBEAT_KEY not in backend.objects

@@ -296,6 +296,12 @@ The persistent worker contract is:
 
 - Deploy exactly one worker replica. The current B2 claim is durable and
   append-only, but it is not an atomic distributed lock.
+- Keep queue scans transaction-budgeted. Derive queued, claimed, failed,
+  completed, and immutable-final state from one paginated B2 listing snapshot;
+  an idle scan must not issue per-job `HEAD` or `GET` requests.
+- Keep production polling and heartbeat intervals at 60 seconds or slower
+  unless a measured B2 transaction budget supports a reviewed change. Do not
+  publish mutable heartbeats on every idle state transition.
 - Keep `TOLUVA_WORKER_ALLOW_PROVIDER_SPEND=false` by default. Only the
   dedicated worker host may set it to `true`.
 - Publish the single mutable heartbeat at

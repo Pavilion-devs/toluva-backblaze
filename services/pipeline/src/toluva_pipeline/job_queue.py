@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Callable
 
+from genblaze_core import FileEntry
 from genblaze_s3 import S3StorageBackend
 
 from toluva_pipeline.live_end_to_end import LiveEndToEndReport, run_live_end_to_end
@@ -175,23 +176,29 @@ def _load_request(
     return request, scope, keys
 
 
-def _claimed_at(
-    backend: S3StorageBackend,
-    *,
-    keys: ToluvaObjectKeys,
-    scope: StorageScope,
-) -> datetime | None:
-    claim_key = keys.status_event(scope, 2, "claimed")
-    if not backend.exists(claim_key):
-        return None
-    try:
-        payload = json.loads(backend.get(claim_key))
-        claimed_at = datetime.fromisoformat(str(payload["created_at"]))
-    except (KeyError, TypeError, ValueError, json.JSONDecodeError):
-        return datetime.max.replace(tzinfo=UTC)
-    if claimed_at.tzinfo is None:
-        return claimed_at.replace(tzinfo=UTC)
-    return claimed_at.astimezone(UTC)
+def _utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
+
+def _list_intake_entries(backend: S3StorageBackend) -> tuple[FileEntry, ...]:
+    """List one queue snapshot without per-job HEAD or GET transactions."""
+
+    entries: list[FileEntry] = []
+    continuation_token: str | None = None
+    while True:
+        page = backend.list(
+            "projects/intake-",
+            max_keys=1000,
+            continuation_token=continuation_token,
+        )
+        entries.extend(page.entries)
+        if page.next_token is None:
+            return tuple(entries)
+        if page.next_token == continuation_token:
+            raise RuntimeError("B2 queue listing returned a repeated page token")
+        continuation_token = page.next_token
 
 
 def process_queued_job(
@@ -254,13 +261,14 @@ def find_next_runnable_job(
         raise ValueError("stale_claim_seconds must be at least 30")
     if now.tzinfo is None:
         raise ValueError("now must be timezone-aware")
-    page = backend.list("projects/intake-", max_keys=1000)
+    entries = _list_intake_entries(backend)
+    entries_by_key = {entry.key: entry for entry in entries}
     candidates = sorted(
         (
             entry.last_modified,
             entry.key,
         )
-        for entry in page.entries
+        for entry in entries
         if QUEUE_PATTERN.fullmatch(entry.key)
     )
     for _, key in candidates:
@@ -270,11 +278,21 @@ def find_next_runnable_job(
         job_id = match.group("job")
         scope = StorageScope(project_id, job_id, TARGET_LANGUAGE)
         keys = ToluvaObjectKeys(project_id)
-        if backend.exists(keys.status_event(scope, 12, "completed")):
+        terminal_keys = (
+            keys.status_event(scope, 12, "completed"),
+            keys.status_event(scope, 99, "failed"),
+            keys.final_record(scope, JOB_VERSION),
+        )
+        if any(key in entries_by_key for key in terminal_keys):
             continue
-        if backend.exists(keys.status_event(scope, 99, "failed")):
-            continue
-        claimed_at = _claimed_at(backend, keys=keys, scope=scope)
+        claim_entry = entries_by_key.get(
+            keys.status_event(scope, 2, "claimed")
+        )
+        claimed_at = (
+            _utc(claim_entry.last_modified)
+            if claim_entry is not None
+            else None
+        )
         if (
             claimed_at is not None
             and now.astimezone(UTC) - claimed_at

@@ -1,7 +1,7 @@
 # Toluva — Product, Architecture, and Win Plan
 
 Last updated: July 29, 2026  
-Status: persistent worker deployed on an isolated VPS; final licensed sample next
+Status: transaction-budgeted queue-v2 worker ready; production handshake next
 Submission deadline: August 3, 2026 at 10:00 p.m. WAT  
 Internal submission target: August 3, 2026 at 6:00 p.m. WAT
 
@@ -978,6 +978,21 @@ Durable upload and queue slice completed:
   Additional orderly restarts occurred while separate Dara regeneration
   traffic was active; kernel logs showed no OOM. Future Toluva operations must
   not reinstall Docker, reboot the host, or touch those units.
+- A later controlled production preflight exposed a B2 transaction-budget
+  defect before any new TTS call: the five-second worker loop repeatedly
+  inspected the durable queue and exhausted the configured Class B/download
+  cap.
+- Queue v2 now scans queued, claimed, failed, completed, and immutable-final
+  state from one paginated listing snapshot with no per-job `HEAD` or `GET`
+  requests during idle discovery. Immutable final records also act as terminal
+  markers when a completion event is unavailable.
+- Idle state transitions no longer publish a heartbeat object. Poll and
+  heartbeat intervals are both at least 60 seconds, reducing background B2
+  transaction volume while keeping the judge-facing lease finite.
+- The queue-v2 implementation passed all 87 pipeline tests, secret-safe image
+  readiness, and pinned Whisper/Argos model-hash verification. The interrupted
+  handshake used no new ElevenLabs credits and will resume only after B2 reads
+  are available.
 
 ## 16. Delivery Schedule
 
@@ -1174,6 +1189,13 @@ sample formats and normalize inputs.
 
 Mitigation: use a persistent worker or queue, finite polling, stored state, and
 resume/inspect behavior. Do not tie full generation to one browser request.
+
+### B2 transaction caps interrupt the worker
+
+Mitigation: scan the append-only queue from one listing snapshot, never perform
+per-job reads during idle discovery, publish the heartbeat at most once per
+minute, and treat final records as terminal queue markers. Keep provider stages
+checkpointed so a storage-cap failure cannot cause an unsafe TTS replay.
 
 ### Provenance looks bolted on
 
@@ -1573,6 +1595,22 @@ the Dara units, reuse port 8000, change their tunnel, or trigger a host reboot.
 The one-time Docker package install caused a brief managed restart before the
 Toluva service existed; subsequent worker startup preserved the existing
 process IDs and unit hashes.
+
+### 2026-07-29 — Transaction-budgeted B2 queue
+
+Decision: Replace five-second queue-v1 polling with queue v2. Use a minimum
+60-second polling and heartbeat interval, publish no heartbeat on idle state
+transitions, and derive queue request, claim, terminal-event, and immutable
+final-record state from one paginated B2 listing snapshot without per-job
+`HEAD` or `GET` requests.
+
+Reason: A production preflight exhausted the bucket's configured Class
+B/download transaction cap before a new provider call. Append-only requests
+remain in B2 forever, so per-request inspection grows with history and can
+reconsider completed jobs. Queue v2 bounds background storage traffic,
+recognizes an immutable final record as terminal, preserves finite worker
+liveness, and prevents a storage-cap incident from turning into duplicate TTS
+spend.
 
 ## 22. Official References
 
