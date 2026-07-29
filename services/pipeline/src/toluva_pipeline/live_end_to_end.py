@@ -1026,7 +1026,7 @@ def run_live_end_to_end(
             / job_id
             / version
         ).resolve()
-        durable_dir.mkdir(parents=True, exist_ok=False)
+        durable_dir.mkdir(parents=True, exist_ok=True)
         durable_output = durable_dir / "localized-de.mp4"
         shutil.copy2(generated_output, durable_output)
         (durable_dir / "captions.vtt").write_bytes(captions_bytes)

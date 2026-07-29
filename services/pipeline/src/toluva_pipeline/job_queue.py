@@ -6,7 +6,7 @@ import hashlib
 import json
 import re
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Callable
 
 from genblaze_s3 import S3StorageBackend
@@ -175,6 +175,25 @@ def _load_request(
     return request, scope, keys
 
 
+def _claimed_at(
+    backend: S3StorageBackend,
+    *,
+    keys: ToluvaObjectKeys,
+    scope: StorageScope,
+) -> datetime | None:
+    claim_key = keys.status_event(scope, 2, "claimed")
+    if not backend.exists(claim_key):
+        return None
+    try:
+        payload = json.loads(backend.get(claim_key))
+        claimed_at = datetime.fromisoformat(str(payload["created_at"]))
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+        return datetime.max.replace(tzinfo=UTC)
+    if claimed_at.tzinfo is None:
+        return claimed_at.replace(tzinfo=UTC)
+    return claimed_at.astimezone(UTC)
+
+
 def process_queued_job(
     settings: Settings,
     *,
@@ -223,22 +242,28 @@ def process_queued_job(
         raise
 
 
-def find_next_queued_job(settings: Settings) -> tuple[str, str] | None:
-    """Return the oldest unclaimed intake request from B2."""
+def find_next_runnable_job(
+    backend: S3StorageBackend,
+    *,
+    now: datetime,
+    stale_claim_seconds: int,
+) -> tuple[str, str] | None:
+    """Return the oldest unclaimed or safely stale intake request."""
 
-    scanner_scope = StorageScope("queue-scanner", "queue-scanner", TARGET_LANGUAGE)
-    backend = build_b2_storage(
-        settings,
-        scanner_scope,
-        preflight=True,
-    ).backend
+    if stale_claim_seconds < 30:
+        raise ValueError("stale_claim_seconds must be at least 30")
+    if now.tzinfo is None:
+        raise ValueError("now must be timezone-aware")
     page = backend.list("projects/intake-", max_keys=1000)
     candidates = sorted(
-        entry.key
+        (
+            entry.last_modified,
+            entry.key,
+        )
         for entry in page.entries
         if QUEUE_PATTERN.fullmatch(entry.key)
     )
-    for key in candidates:
+    for _, key in candidates:
         match = QUEUE_PATTERN.fullmatch(key)
         assert match is not None
         project_id = match.group("project")
@@ -249,14 +274,55 @@ def find_next_queued_job(settings: Settings) -> tuple[str, str] | None:
             continue
         if backend.exists(keys.status_event(scope, 99, "failed")):
             continue
-        if backend.exists(keys.status_event(scope, 2, "claimed")):
+        claimed_at = _claimed_at(backend, keys=keys, scope=scope)
+        if (
+            claimed_at is not None
+            and now.astimezone(UTC) - claimed_at
+            < timedelta(seconds=stale_claim_seconds)
+        ):
             continue
         return project_id, job_id
     return None
 
 
-def process_next_queued_job(settings: Settings) -> LiveEndToEndReport | None:
-    handle = find_next_queued_job(settings)
+def find_next_queued_job(settings: Settings) -> tuple[str, str] | None:
+    """Backward-compatible settings wrapper for one queue scan."""
+
+    scanner_scope = StorageScope("queue-scanner", "queue-scanner", TARGET_LANGUAGE)
+    backend = build_b2_storage(
+        settings,
+        scanner_scope,
+        preflight=True,
+    ).backend
+    return find_next_runnable_job(
+        backend,
+        now=datetime.now(UTC),
+        stale_claim_seconds=settings.worker_stale_claim_seconds,
+    )
+
+
+def process_next_queued_job(
+    settings: Settings,
+    *,
+    backend: S3StorageBackend | None = None,
+) -> LiveEndToEndReport | None:
+    queue_backend = backend
+    if queue_backend is None:
+        scanner_scope = StorageScope(
+            "queue-scanner",
+            "queue-scanner",
+            TARGET_LANGUAGE,
+        )
+        queue_backend = build_b2_storage(
+            settings,
+            scanner_scope,
+            preflight=True,
+        ).backend
+    handle = find_next_runnable_job(
+        queue_backend,
+        now=datetime.now(UTC),
+        stale_claim_seconds=settings.worker_stale_claim_seconds,
+    )
     if handle is None:
         return None
     return process_queued_job(

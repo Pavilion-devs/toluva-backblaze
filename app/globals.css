@@ -311,6 +311,42 @@ button:disabled {
   padding: 9px 11px;
 }
 
+.worker-pill {
+  align-items: center;
+  border: 1px solid #b9b3a4;
+  color: #65665e;
+  display: inline-flex;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 8px;
+  font-weight: 700;
+  gap: 7px;
+  letter-spacing: 0.1em;
+  padding: 9px 10px;
+}
+
+.worker-pill i {
+  background: currentColor;
+  border-radius: 50%;
+  height: 6px;
+  width: 6px;
+}
+
+.worker-idle {
+  color: var(--mint-dark);
+}
+
+.worker-processing {
+  color: #166f83;
+}
+
+.worker-checking {
+  color: var(--amber);
+}
+
+.worker-offline {
+  color: #a45a16;
+}
+
 .live-dot {
   background: var(--mint-dark);
   border-radius: 50%;
@@ -2202,6 +2238,10 @@ button:disabled {
   .topbar-actions {
     justify-content: space-between;
     width: 100%;
+  }
+
+  .worker-pill {
+    display: none;
   }
 
   .content-wrap {

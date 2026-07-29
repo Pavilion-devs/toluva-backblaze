@@ -17,6 +17,11 @@ type WorkspaceTab = "timeline" | "assets" | "provenance";
 type LanguageCode = "de" | "fr" | "es" | "ja";
 type MediaView = "source" | "final";
 type ConnectionState = "checking" | "live" | "snapshot";
+type WorkerConnectionState =
+  | "checking"
+  | "idle"
+  | "processing"
+  | "offline";
 type UploadState =
   | "idle"
   | "inspecting"
@@ -133,6 +138,21 @@ async function fetchJobStatus(
   return payload.job;
 }
 
+async function fetchWorkerStatus(): Promise<WorkerConnectionState> {
+  const response = await fetch("/api/worker-status", {
+    cache: "no-store",
+    headers: { Accept: "application/json" },
+  });
+  const payload = (await response.json()) as {
+    ok?: boolean;
+    worker?: { state?: WorkerConnectionState };
+  };
+  if (!response.ok || !payload.ok || !payload.worker?.state) {
+    return "offline";
+  }
+  return payload.worker.state;
+}
+
 function StatusMark({
   status,
 }: {
@@ -174,6 +194,8 @@ export function ToluvaApp() {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [activeJob, setActiveJob] = useState<ActiveJob | null>(null);
   const [statusWarning, setStatusWarning] = useState<string | null>(null);
+  const [workerConnection, setWorkerConnection] =
+    useState<WorkerConnectionState>("checking");
 
   const refreshRun = useCallback(async () => {
     setConnection("checking");
@@ -206,6 +228,25 @@ export function ToluvaApp() {
       });
     return () => {
       cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const refreshWorker = () => {
+      fetchWorkerStatus()
+        .then((state) => {
+          if (!cancelled) setWorkerConnection(state);
+        })
+        .catch(() => {
+          if (!cancelled) setWorkerConnection("offline");
+        });
+    };
+    refreshWorker();
+    const interval = window.setInterval(refreshWorker, 15000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
     };
   }, []);
 
@@ -501,6 +542,23 @@ export function ToluvaApp() {
           </div>
           <div className="topbar-actions">
             <span
+              className={`worker-pill worker-${workerConnection}`}
+              title={
+                workerConnection === "offline"
+                  ? "Uploads remain durable in B2 until the generation worker reconnects."
+                  : "The single-replica Python generation worker is reporting through B2."
+              }
+            >
+              <i />
+              {workerConnection === "processing"
+                ? "WORKER BUSY"
+                : workerConnection === "idle"
+                  ? "WORKER ONLINE"
+                  : workerConnection === "checking"
+                    ? "CHECKING WORKER"
+                    : "QUEUE ONLY"}
+            </span>
+            <span
               className={`demo-pill connection-${connection}`}
               title={
                 connection === "live"
@@ -580,7 +638,14 @@ export function ToluvaApp() {
                     ? "Final record is available in B2."
                     : "Polling append-only B2 stage records every 3 seconds."}
                 </span>
-                {statusWarning && <strong>{statusWarning}</strong>}
+                {(statusWarning ||
+                  (activeJob.state === "queued" &&
+                    workerConnection === "offline")) && (
+                  <strong>
+                    {statusWarning ??
+                      "Worker is offline; this job will remain safely queued."}
+                  </strong>
+                )}
               </div>
               {activeJob.finalAvailable && (
                 <div className="job-output">
@@ -1386,8 +1451,9 @@ export function ToluvaApp() {
               <span>WRITE CONTRACT</span>
               <strong>SOURCE → QUEUE REQUEST → STATUS EVENTS</strong>
               <small>
-                Credentials remain server-side. Creating the job does not call
-                ElevenLabs.
+                {workerConnection === "offline"
+                  ? "Worker is currently offline. The job will stay durable in B2 until it reconnects."
+                  : "Worker heartbeat is live. Credentials remain server-side and generation starts only after claim."}
               </small>
             </div>
 

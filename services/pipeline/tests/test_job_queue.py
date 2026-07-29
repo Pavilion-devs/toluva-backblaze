@@ -1,9 +1,14 @@
 import json
 from datetime import UTC, datetime
+from types import SimpleNamespace
 
 import pytest
 
-from toluva_pipeline.job_queue import JobStatusWriter, QueuedJobRequest
+from toluva_pipeline.job_queue import (
+    JobStatusWriter,
+    QueuedJobRequest,
+    find_next_runnable_job,
+)
 from toluva_pipeline.storage.keys import StorageScope, ToluvaObjectKeys
 
 
@@ -19,6 +24,22 @@ class MemoryBackend:
 
     def put(self, key: str, data: bytes, *, content_type: str) -> None:
         self.objects[key] = data
+
+    def list(
+        self,
+        prefix: str,
+        *,
+        max_keys: int,
+    ) -> SimpleNamespace:
+        entries = tuple(
+            SimpleNamespace(
+                key=key,
+                last_modified=datetime(2026, 7, 29, 12, 0, tzinfo=UTC),
+            )
+            for key in self.objects
+            if key.startswith(prefix)
+        )
+        return SimpleNamespace(entries=entries, next_token=None)
 
 
 def request_payload() -> dict[str, object]:
@@ -95,3 +116,60 @@ def test_status_writer_is_append_only_and_idempotent() -> None:
     assert payload["state"] == "running"
     assert payload["message"] == "Claimed once."
     assert len(backend.objects) == 1
+
+
+def test_stale_claim_is_recovered_but_recent_claim_is_not() -> None:
+    backend = MemoryBackend()
+    payload = request_payload()
+    scope = StorageScope(
+        str(payload["project_id"]),
+        str(payload["job_id"]),
+        "de-DE",
+    )
+    keys = ToluvaObjectKeys(scope.project_id)
+    backend.objects[keys.queue_request(scope)] = json.dumps(payload).encode()
+    claim_key = keys.status_event(scope, 2, "claimed")
+    backend.objects[claim_key] = json.dumps(
+        {"created_at": "2026-07-29T12:00:00+00:00"}
+    ).encode()
+
+    assert (
+        find_next_runnable_job(
+            backend,  # type: ignore[arg-type]
+            now=datetime(2026, 7, 29, 12, 1, tzinfo=UTC),
+            stale_claim_seconds=90,
+        )
+        is None
+    )
+    assert find_next_runnable_job(
+        backend,  # type: ignore[arg-type]
+        now=datetime(2026, 7, 29, 12, 2, tzinfo=UTC),
+        stale_claim_seconds=90,
+    ) == (scope.project_id, scope.job_id)
+
+
+def test_completed_or_failed_jobs_are_never_reclaimed() -> None:
+    for terminal_sequence, terminal_stage in (
+        (12, "completed"),
+        (99, "failed"),
+    ):
+        backend = MemoryBackend()
+        payload = request_payload()
+        scope = StorageScope(
+            str(payload["project_id"]),
+            str(payload["job_id"]),
+            "de-DE",
+        )
+        keys = ToluvaObjectKeys(scope.project_id)
+        backend.objects[keys.queue_request(scope)] = json.dumps(payload).encode()
+        backend.objects[
+            keys.status_event(scope, terminal_sequence, terminal_stage)
+        ] = b"{}"
+        assert (
+            find_next_runnable_job(
+                backend,  # type: ignore[arg-type]
+                now=datetime(2026, 7, 29, 13, 0, tzinfo=UTC),
+                stale_claim_seconds=90,
+            )
+            is None
+        )

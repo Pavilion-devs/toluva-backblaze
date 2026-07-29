@@ -243,6 +243,82 @@ byte count, and SHA-256. It then emits one append-only B2 event per stage. An
 exact replay of a completed job returns the final checkpoint without rerunning
 Whisper, Argos, ElevenLabs, or FFmpeg.
 
-The consumer is ready for a persistent Python process, but no always-on external
-worker host is configured yet. Until that host is selected, the hosted app
-honestly leaves new requests queued when the operator-run worker is offline.
+## Persistent production worker
+
+The production entry point continuously polls the B2 queue:
+
+```bash
+PYTHONPATH=services/pipeline/src \
+  TOLUVA_WORKER_ALLOW_PROVIDER_SPEND=true \
+  services/pipeline/.venv/bin/python -m toluva_pipeline.worker
+```
+
+Its production contract is deliberately narrow:
+
+- Run exactly one replica. B2 request discovery and the append-only claim event
+  are durable but not an atomic compare-and-swap lock.
+- Poll every five seconds by default and back off to at most 60 seconds after a
+  transient queue or heartbeat error.
+- Publish a secret-safe B2 heartbeat every 30 seconds with a 90-second lease.
+  This heartbeat is the one intentionally mutable runtime record; job events
+  and generated assets remain append-only.
+- Refuse startup unless B2, ElevenLabs, FFmpeg, FFprobe, the pinned Whisper
+  model, the pinned Argos model, the one-replica setting, and the explicit
+  provider-spend opt-in all pass readiness.
+- On `SIGTERM` or `SIGINT`, finish the current synchronous step when the host
+  permits it and do not claim a new job. If the host kills the process during a
+  job, a replacement may resume the same request after the stale-claim window
+  by loading its immutable B2 checkpoints.
+- Never place provider or B2 credentials in the web container.
+
+The dashboard polls the heartbeat through a server-only route. An expired or
+unavailable lease is shown as `QUEUE ONLY`; an upload remains safely queued
+instead of being described as actively processing.
+
+## Pinned Linux image
+
+Build the same worker image intended for the external host:
+
+```bash
+docker buildx build \
+  --load \
+  --platform linux/amd64 \
+  --file services/pipeline/Dockerfile \
+  --tag toluva-worker:local \
+  .
+```
+
+The image pins Python 3.12.13, `uv` 0.11.12, the locked Python environment, a
+CPU-only PyTorch 2.13.0 wheel, the exact Faster Whisper model revision, and the
+Argos English-to-German model. The CPU index is explicit so a Linux build
+cannot silently pull multi-gigabyte CUDA libraries for this CPU worker. Both
+model files and the Argos package archive are checked against hard-coded
+SHA-256 values during the build. The image also contains FFmpeg/FFprobe, runs
+as non-root UID/GID 10001, and uses `tini` for correct signal forwarding.
+
+Run its secret-safe readiness check with the private worker environment:
+
+```bash
+docker run --rm \
+  --platform linux/amd64 \
+  --env-file .env.local \
+  --env TOLUVA_WORK_DIR=/var/lib/toluva \
+  --env TOLUVA_WORKER_ALLOW_PROVIDER_SPEND=true \
+  --entrypoint python \
+  toluva-worker:local \
+  -m toluva_pipeline.worker --check
+```
+
+The recommended deployment target is a one-instance Cloud Run worker pool
+because worker pools are designed for continuous pull-based work and do not
+require an HTTP listener. That host is continuously billed while its instance
+runs, so it is a deliberate budget/account decision rather than something the
+application silently creates. No always-on external worker host is configured
+yet. Until one is selected, the hosted app honestly leaves new requests queued
+when the operator-run worker is offline.
+
+The verified local `linux/amd64` build has OCI digest
+`sha256:41e238e088f63c0293667143c8ac8d2ba700ca9c105a6ae8558e4b3b18f620b8`
+and uncompressed size 1,628,957,753 bytes. It reported UID/GID 10001, PyTorch
+`2.13.0+cpu` with CUDA unavailable, both model hashes matching, and reproduced
+“Willkommen bei Toluva, eine Botschaft, viele Sprachen.” entirely offline.

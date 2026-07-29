@@ -64,6 +64,12 @@ Genblaze, and stores verified media and provenance in B2.
   queue request, and first status event directly to Backblaze B2
 - A B2 queue consumer that validates the uploaded source hash, runs the real
   Genblaze engine, and appends 12 visible progress stages
+- A persistent one-replica worker runtime with leased B2 heartbeats,
+  interruption recovery, bounded polling backoff, and graceful shutdown
+- A reproducible non-root Linux worker image with pinned CPU-only Python
+  dependencies, FFmpeg, Faster Whisper, and Argos model hashes
+- An honest dashboard worker indicator that shows online, busy, checking, or
+  queue-only state without exposing infrastructure credentials
 - Refresh-safe job polling and completed-job playback resolved from the new
   job's immutable final record
 
@@ -102,9 +108,10 @@ See `services/pipeline/README.md` for the API and credential-readiness commands.
   encrypted runtime secrets; ElevenLabs remains worker-only.
 - Credential values are absent from tracked files.
 - The Python generation worker still runs separately from the hosted web app.
-  The UI now launches a durable B2 job and can display its live status and
-  completed media. The worker consumer is currently operator-run; an always-on
-  external Python host remains required for unattended public execution.
+  The UI launches a durable B2 job, displays its live status and completed
+  media, and reads a finite worker lease. The production worker runtime and
+  pinned image are implemented; an always-on external Python host remains
+  required for unattended public execution.
 - The new transcript and German translation are genuine model outputs, not
   scripted fixtures. The source video is a clearly labelled, locally generated
   development sample; an entrant-owned or licensed final demo video is still

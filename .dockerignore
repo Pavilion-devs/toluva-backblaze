@@ -1,0 +1,9 @@
+**
+!services/
+services/*
+!services/pipeline/
+services/pipeline/*
+!services/pipeline/pyproject.toml
+!services/pipeline/uv.lock
+!services/pipeline/src/
+!services/pipeline/src/**

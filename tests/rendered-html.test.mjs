@@ -60,6 +60,21 @@ test("fails closed when runtime B2 credentials are unavailable", async () => {
   });
 });
 
+test("reports an unavailable worker as offline without leaking an error", async () => {
+  const response = await render("/api/worker-status");
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.ok, true);
+  assert.deepEqual(payload.worker, {
+    engineVersion: null,
+    lastSeenAt: null,
+    online: false,
+    reason: "unavailable",
+    replicaCount: null,
+    state: "offline",
+  });
+});
+
 test("rejects media kinds outside the verified allowlist", async () => {
   const response = await render("/api/media?kind=../../private");
   assert.equal(response.status, 400);

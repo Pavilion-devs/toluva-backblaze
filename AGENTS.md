@@ -292,6 +292,31 @@ The verified fixture-free execution contract is:
   verifiable Genblaze manifests.
 - Independently re-hash the final B2 object before reporting success.
 
+The persistent worker contract is:
+
+- Deploy exactly one worker replica. The current B2 claim is durable and
+  append-only, but it is not an atomic distributed lock.
+- Keep `TOLUVA_WORKER_ALLOW_PROVIDER_SPEND=false` by default. Only the
+  dedicated worker host may set it to `true`.
+- Publish the single mutable heartbeat at
+  `projects/system-runtime/workers/primary/heartbeat.json`. Its lease must be
+  finite, secret-safe, and consumed only by the server bridge.
+- Treat every other job status event, provider intent/completion, manifest, and
+  media object as immutable.
+- Resume a stale claimed job only after the configured stale-claim window and
+  only through its durable stage checkpoints.
+- On termination, do not claim a new job. A hard kill may interrupt the current
+  synchronous step; the replacement worker must recover from B2 rather than
+  local process memory.
+- Keep runtime logs structured and secret-safe. Error types are acceptable;
+  credential values and provider response bodies are not.
+- The checked-in Docker image is the deployment artifact. Keep Python, `uv`,
+  the explicit CPU-only PyTorch source, model revisions, model hashes, and the
+  non-root runtime pinned. Do not allow Linux resolution to reintroduce CUDA
+  packages unless the architecture deliberately moves to GPU execution.
+- Do not describe uploads as automatically processing unless the heartbeat
+  lease is currently valid. Offline uploads remain queued.
+
 ### The app must fail honestly
 
 - A failed provider call must produce a visible failed/retryable state.

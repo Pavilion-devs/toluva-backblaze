@@ -17,6 +17,18 @@ def _env_int(name: str, default: int) -> int:
     return default if value in (None, "") else int(value)
 
 
+def _env_bool(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value in (None, ""):
+        return default
+    normalized = value.strip().casefold()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    raise ValueError(f"{name} must be a boolean value")
+
+
 @dataclass(frozen=True)
 class Settings:
     """Runtime settings.
@@ -35,6 +47,11 @@ class Settings:
     elevenlabs_api_key: str | None = field(repr=False)
     assemblyai_api_key: str | None = field(repr=False)
     openai_api_key: str | None = field(repr=False)
+    worker_poll_seconds: float = 5.0
+    worker_heartbeat_seconds: int = 30
+    worker_stale_claim_seconds: int = 90
+    worker_replica_count: int = 1
+    worker_allow_provider_spend: bool = False
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -54,6 +71,17 @@ class Settings:
             elevenlabs_api_key=os.getenv("ELEVENLABS_API_KEY"),
             assemblyai_api_key=os.getenv("ASSEMBLYAI_API_KEY"),
             openai_api_key=os.getenv("OPENAI_API_KEY"),
+            worker_poll_seconds=_env_float("TOLUVA_WORKER_POLL_SECONDS", 5.0),
+            worker_heartbeat_seconds=_env_int(
+                "TOLUVA_WORKER_HEARTBEAT_SECONDS", 30
+            ),
+            worker_stale_claim_seconds=_env_int(
+                "TOLUVA_WORKER_STALE_CLAIM_SECONDS", 90
+            ),
+            worker_replica_count=_env_int("TOLUVA_WORKER_REPLICA_COUNT", 1),
+            worker_allow_provider_spend=_env_bool(
+                "TOLUVA_WORKER_ALLOW_PROVIDER_SPEND", False
+            ),
         )
 
     @property
@@ -93,5 +121,12 @@ class Settings:
             "providers": {
                 name: {"ready": bool(value)}
                 for name, value in provider_fields.items()
+            },
+            "worker": {
+                "allow_provider_spend": self.worker_allow_provider_spend,
+                "heartbeat_seconds": self.worker_heartbeat_seconds,
+                "poll_seconds": self.worker_poll_seconds,
+                "replica_count": self.worker_replica_count,
+                "stale_claim_seconds": self.worker_stale_claim_seconds,
             },
         }

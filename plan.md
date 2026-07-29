@@ -1,7 +1,7 @@
 # Toluva — Product, Architecture, and Win Plan
 
 Last updated: July 29, 2026  
-Status: B2-backed upload/queue/worker/playback slice verified; always-on worker host and final licensed sample next
+Status: persistent worker runtime and pinned image implemented; external worker host and final licensed sample next
 Submission deadline: August 3, 2026 at 10:00 p.m. WAT  
 Internal submission target: August 3, 2026 at 6:00 p.m. WAT
 
@@ -676,6 +676,9 @@ The user sees:
 - [x] B2 storage for intermediates and finals
 - [x] Genblaze manifests/lineage
 - [x] Job and segment status UI
+- [x] Persistent one-replica worker lifecycle and readiness
+- [x] Leased worker heartbeat and honest online/offline UI
+- [x] Pinned non-root Linux worker image
 - [x] Source/final playback comparison
 - [x] Provenance/disclosure inspector
 - [ ] Human approval state
@@ -929,10 +932,30 @@ Durable upload and queue slice completed:
 - Replaying the exact uploaded job returned the completed B2 checkpoint without
   Whisper, Argos, ElevenLabs, or FFmpeg output, confirming duplicate-spend
   protection.
-- The queue consumer is production-shaped but currently operator-run. An
-  always-on external Python worker host is still required before describing
-  new public uploads as automatically executed while the development machine
-  is offline.
+- Added a continuous one-replica worker runtime with secret-safe readiness,
+  leased B2 heartbeat, bounded polling backoff, signal handling, and stale-claim
+  recovery from immutable B2 checkpoints.
+- Added a pinned non-root Linux image containing the locked Python environment,
+  explicit CPU-only PyTorch resolution, FFmpeg/FFprobe, Faster Whisper revision
+  `88b03866a4066bb4a97c12258abb82b1e9af0121`, and Argos
+  `translate-en_de` 1.3. The build verifies the exact model hashes before
+  producing the deployment artifact.
+- Verified the final `linux/amd64` image as UID/GID 10001 with OCI digest
+  `sha256:41e238e088f63c0293667143c8ac8d2ba700ca9c105a6ae8558e4b3b18f620b8`
+  and uncompressed size 1,628,957,753 bytes. Its secret-safe readiness returned
+  true with both model hashes matching, FFmpeg/FFprobe present, PyTorch
+  `2.13.0+cpu`, and CUDA unavailable.
+- Ran Argos inside that exact Linux image without a network provider. It
+  reproduced “Willkommen bei Toluva, eine Botschaft, viele Sprachen.”
+- Added a server-only worker-status route and dashboard state. The interface
+  shows a finite live lease as online/busy and otherwise says `QUEUE ONLY`.
+- Published an actual idle heartbeat through the configured B2 path without
+  invoking a provider. Its lease expired as designed when the operator-run
+  process exited.
+- The worker runtime and container are production-shaped but no always-on
+  external host is configured yet. A one-instance Cloud Run worker pool is the
+  recommended target, subject to an explicit cloud account and continuous
+  runtime budget decision.
 
 ## 16. Delivery Schedule
 
@@ -1159,7 +1182,9 @@ Resolve during scaffolding or the first spike:
 - [ ] Metadata database
 - [x] Job queue/worker approach — append-only Backblaze B2 queue and Python
       consumer
-- [ ] Worker hosting target; web hosting is locked to OpenAI Sites
+- [x] Worker hosting architecture — exactly one continuously polling container;
+      Cloud Run worker pool is the recommended target
+- [ ] Worker hosting account/deployment; web hosting is locked to OpenAI Sites
 - [x] Transcription provider/model — local Faster Whisper 1.2.1 with
       `Systran/faster-whisper-base.en` revision
       `88b03866a4066bb4a97c12258abb82b1e9af0121`
@@ -1331,10 +1356,11 @@ testable.
 Decision: Store WebVTT as the durable sidecar and embed captions in MP4 as a
 `mov_text` track.
 
-Reason: The current worker FFmpeg build lacks the `libass` subtitle filter, so
-burning captions would add an unstable runtime/font dependency. The sidecar is
-browser-friendly and inspectable, while the MP4 track keeps captions packaged
-with the asset. The final UI must explicitly attach the WebVTT track.
+Reason: The development FFmpeg build used for the first proof lacked the
+`libass` subtitle filter, so burning captions would have added an unstable
+runtime/font dependency. The sidecar is browser-friendly and inspectable, while
+the MP4 track keeps captions packaged with the asset. The final UI must
+explicitly attach the WebVTT track.
 
 ### 2026-07-29 — Composition fixture honesty
 
@@ -1449,6 +1475,61 @@ Reason: B2 remains authoritative after refresh, the UI can poll without a
 database, and neither a browser-supplied object key nor a mutable `latest.json`
 record can widen the private-media boundary.
 
+### 2026-07-29 — Single-replica worker claim contract
+
+Decision: Run exactly one persistent queue-worker replica until the B2 claim
+operation is replaced by an atomic lock or compare-and-swap mechanism.
+
+Reason: The immutable claim event makes work recoverable and inspectable but
+does not prevent two independent workers from observing the same unclaimed
+request. One replica avoids double provider spend without pretending the
+current object-store queue offers stronger concurrency guarantees.
+
+### 2026-07-29 — Stale-claim recovery
+
+Decision: A replacement worker may revisit a claimed, incomplete request only
+after a configurable 90-second stale window. Completed and failed jobs are
+never reclaimed automatically.
+
+Reason: The host may terminate the container during a synchronous media or
+provider step. The existing B2 intent/completion checkpoints make conservative
+resumption safer than abandoning the job or starting a new billable job.
+
+### 2026-07-29 — Worker heartbeat exception
+
+Decision: Permit one mutable, secret-safe heartbeat object at
+`projects/system-runtime/workers/primary/heartbeat.json`, with a 30-second
+publication interval and a 90-second lease.
+
+Reason: Job evidence must remain append-only, but the product needs an honest
+answer to whether an external worker is currently polling. A finite lease fails
+closed after process or host failure and contains no credentials.
+
+### 2026-07-29 — Pinned worker container
+
+Decision: Use a non-root Python 3.12.13 Linux image with `uv==0.11.12`, locked
+Python dependencies, an explicit CPU-only PyTorch 2.13.0 source,
+FFmpeg/FFprobe, pinned Whisper and Argos revisions, and build-time SHA-256
+verification for both model binaries.
+
+Reason: The long-running engine depends on native media tools and large local
+models. Shipping them in one verified artifact removes hidden host setup,
+prevents runtime model drift, and makes the judging environment reproducible.
+The explicit CPU index also prevents default Linux resolution from adding
+several gigabytes of unused NVIDIA/CUDA packages.
+
+### 2026-07-29 — External worker hosting target
+
+Decision: Prefer a one-instance Cloud Run worker pool for the persistent
+container, but do not create or claim an always-on deployment until a Google
+Cloud account, region, billing project, and continuous-runtime budget are
+explicitly selected.
+
+Reason: Worker pools are designed for continuous pull-based work without an
+HTTP listener and default to one instance, matching Toluva's queue contract.
+They are billed continuously while running, so activation is an external
+operating-cost decision rather than an implicit application change.
+
 ## 22. Official References
 
 Hackathon:
@@ -1465,6 +1546,15 @@ Hackathon:
   https://github.com/backblaze-labs/genblaze
 - Organizer multi-provider starter app:
   https://backblaze-generative-media.devpost.com/updates/45182-genblaze-multi-provider-starter-app
+
+Worker hosting:
+
+- Cloud Run worker-pool overview:
+  https://docs.cloud.google.com/run/docs/overview/what-is-cloud-run
+- Deploy Cloud Run worker pools:
+  https://docs.cloud.google.com/run/docs/deploy-worker-pools
+- Cloud Run container lifecycle and termination contract:
+  https://docs.cloud.google.com/run/docs/container-contract
 
 ElevenLabs:
 
