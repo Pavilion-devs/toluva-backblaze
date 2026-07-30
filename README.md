@@ -46,6 +46,9 @@ Genblaze, and stores verified media and provenance in B2.
   block before translation or ElevenLabs
 - An immutable, hash-bound operator-correction record that resumes the same job
   without rewriting provider evidence or repeating transcription
+- An operator timing-revision panel that exposes the measured segment, target
+  duration, correction instruction, and protected terms; every approved
+  wording is cross-runtime hash-bound before the same job resumes
 - A real Genblaze composition fan-in over source video, the selected localized
   audio, and captions
 - A verified 3.8-second H.264/AAC/`mov_text` MP4, B2-backed caption sidecar,

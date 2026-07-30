@@ -30,10 +30,11 @@ pre-existing service.
 - `toluva-worker.service` — systemd unit that owns the one container replica
 - `worker.env.example` — secret-free runtime contract
 
-The current deployment image is `toluva-worker:queue-v4-8e21b7e`, built from
-the repository's checked-in Dockerfile. It contains Python 3.12.13, the locked
-CPU-only Python environment, FFmpeg/FFprobe, the pinned Faster Whisper model,
-and the pinned Argos English-to-German model.
+The current deployment image is `toluva-worker:queue-v4-c8d95e1`, built from
+the governed timing-approval source over the verified queue-v4 base. It
+contains Python 3.12.13, the locked CPU-only Python environment,
+FFmpeg/FFprobe, the pinned Faster Whisper model, and the pinned Argos
+English-to-German model.
 
 The worker polls and publishes its lease every 60 seconds. An idle queue scan
 uses one paginated B2 listing snapshot and must not perform per-job `HEAD` or
@@ -64,7 +65,7 @@ Installing or starting Toluva must not require a reboot.
 1. Install Docker from the Ubuntu package repository without upgrading or
    restarting unrelated services.
 2. Load the verified `linux/amd64` image and tag it
-   `toluva-worker:queue-v4-8e21b7e`.
+   `toluva-worker:queue-v4-c8d95e1`.
 3. Create `/etc/toluva/worker.env` from `worker.env.example`, insert only the
    scoped B2 credential and ElevenLabs key, and set mode `0600`.
 4. Copy `toluva-worker.service` to `/etc/systemd/system/`.
@@ -313,6 +314,41 @@ unrelated service units.
 - The Dara API, Dara web service, and both Cloudflare tunnel services retained
   the exact process IDs and unit hashes captured before cutover. Dara's health
   endpoint stayed green.
+
+## Queue-v4 timing-approval maintenance release — July 30, 2026
+
+- Source revision `c8d95e1a21a89b209b69e51ccc2d3905aef00ef7`
+  passed 121 pipeline tests, UI lint, the Vinext production build, and all nine
+  rendered route tests.
+- The release extends governed intake to 30 seconds and adds an exact
+  timing-revision approval/resume route. Every retry request is independently
+  tracked; an earlier approval can never unlock a later outstanding revision.
+- Python and TypeScript independently reproduced the same SHA-256 binding for
+  a Unicode German test vector. The binding covers the job, segment, attempt,
+  source/current/instruction hashes, timing target, action, parent run,
+  languages, and protected terms.
+- The main worker Dockerfile, `pyproject.toml`, and `uv.lock` remained
+  byte-for-byte unchanged from the deployed queue-v4 base. The source-only
+  build downloaded no dependency or model and changed no host tooling.
+- The deployed image is `toluva-worker:queue-v4-c8d95e1`, image ID
+  `sha256:e747d4810b40758ee0d07e72b20a52d65c433f65103eaaf192e2b34e37d780e3`,
+  and reported size 1,629,250,437 bytes.
+- Secret-safe readiness passed before cutover. Final state was
+  `active/running`, container health `healthy`, restart count zero, no
+  published ports, 1.5 CPUs, 2,000 MB RAM, 256 processes, and root-only
+  environment mode `0600`. Worker logs contained one idle tick.
+- The Toluva unit hash is
+  `d5ebf6b3839bd8b2ffaae94e82cf007b25dbaf3104a868e861c7dbf63e494161`.
+  The previous unit and exact source archive are preserved beneath
+  `/opt/toluva/releases/c8d95e1/`.
+- The B2 heartbeat reported `queue-v4`, one replica, `idle`, and a current
+  finite lease. No localization job or provider/media stage ran during this
+  release.
+- Sites version 13 deployed privately from the same source commit. Production
+  error logs were empty.
+- The Dara API, Dara web service, and both Cloudflare tunnel services retained
+  their exact pre-cutover process IDs and unit hashes. No command targeted,
+  edited, or restarted those services.
 
 ## Rollback
 

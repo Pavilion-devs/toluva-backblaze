@@ -1,7 +1,7 @@
 # Toluva — Product, Architecture, and Win Plan
 
 Last updated: July 30, 2026
-Status: queue-v4 multi-segment runtime deployed; controlled run pending
+Status: queue-v4 timing-approval runtime deployed; controlled run pending
 Submission deadline: August 3, 2026 at 10:00 p.m. WAT  
 Internal submission target: August 3, 2026 at 6:00 p.m. WAT
 
@@ -687,7 +687,7 @@ The user sees:
 - [x] Pinned non-root Linux worker image
 - [x] Source/final playback comparison
 - [x] Provenance/disclosure inspector
-- [ ] Human approval state
+- [x] Human approval state
 - [ ] Judge access without setup friction
 
 ### Should have
@@ -1232,6 +1232,33 @@ Queue-v4 production release completed on July 30:
 - The Dara API, Dara web service, and both Cloudflare tunnel services retained
   their exact pre-cutover process IDs and unit hashes. Dara's health endpoint
   remained green.
+
+Queue-v4 timing-approval release completed on July 30:
+
+- Extended the governed production intake from 8 seconds to 30 seconds so the
+  controlled proof can exercise genuine Whisper multi-segment output.
+- Added a sanitized timing-review view and immutable approval endpoint to the
+  hosted UI. The browser supplies only the opaque job handle and revised text;
+  the server resolves the exact segment, attempt, request, and approval keys.
+- Bound each approval to one request with a language-neutral SHA-256 contract
+  shared by Python and TypeScript. The same Unicode German vector produced the
+  same digest in both runtimes.
+- Fixed repeated timing gates so every retry round has a unique append-only
+  block and approval status. The B2 scanner resumes only when every stored
+  revision request has its matching approval; approval for attempt 2 cannot
+  unlock attempt 3.
+- The full pipeline suite now passes 121 tests. UI lint, the Vinext production
+  build, and all nine rendered route tests pass. This phase created no
+  localization job and made no model, media, or ElevenLabs call.
+- Deployed image `toluva-worker:queue-v4-c8d95e1`, image ID
+  `sha256:e747d4810b40758ee0d07e72b20a52d65c433f65103eaaf192e2b34e37d780e3`,
+  from source commit `c8d95e1a21a89b209b69e51ccc2d3905aef00ef7`.
+  The container is active, healthy, idle, and still enforces the original
+  one-replica, no-port, 1.5-CPU, 2,000-MB, 256-process boundary.
+- Sites version 13 is privately deployed from the same commit; production
+  error logs are empty.
+- The Dara API, Dara web service, and both Cloudflare services retained their
+  exact pre-cutover process IDs and unit hashes.
 
 ## 16. Delivery Schedule
 
@@ -1943,6 +1970,31 @@ Reason: Starting a new job would lose the strongest cost and lineage proof.
 Same-job resumption preserves the failed/blocked attempt, avoids duplicate
 speech spend, keeps the parent/child run link real across worker restarts, and
 stops all later segment fan-out until the blocked segment is resolved.
+
+### 2026-07-30 — Cross-runtime per-round timing approval
+
+Decision: Resolve every revision request server-side from an opaque job handle,
+bind its approval with a canonical ASCII SHA-256 contract shared by TypeScript
+and Python, and require a matching approval for every outstanding request
+before the B2 scanner resumes the job.
+
+Reason: Browser-supplied storage keys would widen the trust boundary, JSON
+canonicalization differs across runtimes for Unicode, and an “any approval
+exists” scan could let attempt 2 accidentally unlock attempt 3. Exact
+per-round bindings preserve protected terms, parent lineage, retry intent, and
+spend control across worker and web-process restarts.
+
+### 2026-07-30 — Thirty-second governed intake window
+
+Decision: Accept one-speaker English MP4s from 1 to 30 seconds while preserving
+the existing 12 MB upload ceiling, German internal-training authorization, and
+protected `Toluva` term.
+
+Reason: The previous eight-second ceiling biased tests toward a single Whisper
+segment and could not demonstrate the production multi-segment fan-out,
+source-timed assembly, or segment-specific timing gate. Thirty seconds is long
+enough for the controlled proof while still bounding upload size, inference
+time, and provider exposure.
 
 ## 22. Official References
 
