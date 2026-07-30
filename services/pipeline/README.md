@@ -326,10 +326,10 @@ ElevenLabs over outbound HTTPS. It is limited to 1.5 CPUs, 2,000 MB RAM, and
 stores its root-only environment at `/etc/toluva/worker.env`. See
 `deploy/vps/README.md`.
 
-The deployed service uses the immutable tag `toluva-worker:8cf07b9`. Its remote
-image ID matches the verified local image ID, its container health is green,
-its restart count is zero, and the hosted dashboard consumes its current
-one-replica B2 heartbeat as `WORKER ONLINE`. No reverse proxy, DNS record,
+The deployed service uses the immutable tag
+`toluva-worker:queue-v3-35465e6`, built from the transcript-gate source
+revision. Its container health, restart count, and heartbeat must be recorded
+in `deploy/vps/README.md` after each deployment. No reverse proxy, DNS record,
 forwarded port, or public worker endpoint is required.
 
 The verified local `linux/amd64` build has OCI digest
