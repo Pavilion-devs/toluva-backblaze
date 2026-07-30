@@ -1,7 +1,7 @@
 # Toluva — Product, Architecture, and Win Plan
 
-Last updated: July 29, 2026  
-Status: queue-v2 deployed; production handshake waiting on B2 read-cap reset
+Last updated: July 30, 2026
+Status: controlled production handshake and zero-spend replay verified
 Submission deadline: August 3, 2026 at 10:00 p.m. WAT  
 Internal submission target: August 3, 2026 at 6:00 p.m. WAT
 
@@ -1008,6 +1008,53 @@ Durable upload and queue slice completed:
   model-image transfer on this shared host unless a worker-image change is
   submission-critical.
 
+Controlled production handshake completed on July 30:
+
+- Backblaze Class B and Class C caps had reset with sufficient headroom. No cap,
+  billing, or lifecycle setting was changed.
+- The first hosted intake attempt durably stored only its 49,903-byte source
+  object, then stopped before a queue request existed. No worker claim or
+  provider call occurred. The source remains preserved at
+  `projects/intake-ea29e570c7224b7eb1cbf5d6998e1727/source/master/source-a8e286a9f4604d5883595d6b594a1198.mp4`.
+- Added an immutable failure record beside that preserved namespace at
+  `projects/intake-ea29e570c7224b7eb1cbf5d6998e1727/failures/hosted-intake-2026-07-30.json`.
+  It records `queue_request_written=false`, `provider_called=false`, the exact
+  source hash and size, and the fixing commit.
+- Fixed intake publication in commit
+  `22366132f24aeefcdb82aff073c8b65865534424`: one request-scoped B2 uploader
+  now writes source, source record, and initial status before publishing the
+  immutable queue request as the final commit marker.
+- The deployed fix accepted the exact four-second source with SHA-256
+  `f5872bd6324abd57d5c0a534c11729989a9e3a5f10384783dc49d8a98c6ad41e`
+  and created project `intake-a41c94f7088544a08984b17070702388`, job
+  `localize-f2c26c2ff9624974a9ca3d495b50654d`.
+- Queue v2 claimed the job once and completed all 12 append-only status stages.
+  Whisper and Argos ran locally; authorization passed before the only
+  ElevenLabs attempt.
+- ElevenLabs generated 61 characters and 3.94449 seconds of German speech.
+  Drift was -1.38775%, inside the green threshold, so the first attempt was
+  accepted with no rewrite and no second TTS call.
+- The completed project contains 37 B2 objects, including exactly one speech
+  manifest, one final record, four Genblaze manifests, the source lineage,
+  captions, disclosure, timing records, and all 12 status events.
+- The transcription, translation, speech, and composition manifests all
+  verified, and every referenced asset matched its recorded SHA-256.
+- The final B2 MP4 is 76,059 bytes, exactly 4.000 seconds, and contains H.264
+  video, AAC audio, and German `mov_text` subtitles. Its SHA-256 is
+  `98c7f2979d7521fe123d9ff01817a1b9105b0fae9bb31a86d11d79259d6419a6`.
+  The authenticated hosted player reached ready state 4 and reported the same
+  four-second duration; a browser-downloaded copy matched the B2 hash.
+- An exact-handle replay returned the existing final checkpoint with
+  `completed-job` in `resumed_completed_stages`. The project remained at 37
+  objects, one speech manifest, and one final record; its newest object
+  remained the original `12-completed` event. Worker logs showed no second
+  ElevenLabs preflight or generation activity.
+- The live source exposed a useful quality issue for the next phase: local
+  Whisper appended “which is...” to the intended short sentence, and Argos
+  translated that tail. The engine correctly preserved and disclosed what it
+  detected, but judge-facing runs need a cleaner rights-cleared recording plus
+  transcript-confidence and trailing-hallucination review before TTS.
+
 ## 16. Delivery Schedule
 
 ### July 29 — Lock and spike
@@ -1625,6 +1672,33 @@ reconsider completed jobs. Queue v2 bounds background storage traffic,
 recognizes an immutable final record as terminal, preserves finite worker
 liveness, and prevents a storage-cap incident from turning into duplicate TTS
 spend.
+
+### 2026-07-30 — Atomic hosted-intake publication
+
+Decision: Treat the immutable queue request as the intake commit marker. Reuse
+one request-scoped B2 upload URL sequentially, write the source, source record,
+and initial status first, and publish the queue request last. Never delete a
+source that became durable before a failed commit; attach an immutable failure
+record instead.
+
+Reason: A source-only partial write is inert, inspectable, and cannot be claimed
+by the worker. Publishing the request last prevents the worker from observing a
+job whose prerequisite records are incomplete, reduces B2 Class C transactions,
+and preserves an honest audit trail when a hosted request fails midway.
+
+### 2026-07-30 — Production handshake acceptance
+
+Decision: Accept the first controlled Sites-to-B2-to-VPS run as the production
+engine proof. Its stable evidence is project
+`intake-a41c94f7088544a08984b17070702388`, job
+`localize-f2c26c2ff9624974a9ca3d495b50654d`, final SHA-256
+`98c7f2979d7521fe123d9ff01817a1b9105b0fae9bb31a86d11d79259d6419a6`,
+and exactly one speech attempt.
+
+Reason: The run crossed every real deployment boundary, produced four verified
+Genblaze manifests and playable captioned media, and survived an exact replay
+without a new object or provider call. The discovered transcript tail remains
+a recorded quality issue, not a reason to rewrite immutable evidence.
 
 ## 22. Official References
 

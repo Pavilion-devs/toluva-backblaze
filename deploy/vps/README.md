@@ -137,6 +137,41 @@ unrelated service units.
   model-image transfer without a command targeting its unit; no kernel OOM was
   recorded. The Cloudflare tunnel process remained unchanged.
 
+## Controlled production handshake — July 30, 2026
+
+- The deployed Sites intake queued project
+  `intake-a41c94f7088544a08984b17070702388`, job
+  `localize-f2c26c2ff9624974a9ca3d495b50654d`, after durably storing the exact
+  49,903-byte, four-second source with SHA-256
+  `f5872bd6324abd57d5c0a534c11729989a9e3a5f10384783dc49d8a98c6ad41e`.
+- Queue v2 claimed the request during its next bounded poll and completed all
+  12 status stages. The worker logged one ElevenLabs stage, generated 61
+  characters in one speech attempt, and completed without a restart.
+- Timing QA measured 3.94449 seconds against the 4.000-second slot
+  (-1.38775% drift), classified it green, and accepted the first attempt.
+- The project contains 37 B2 objects, exactly one speech manifest, one final
+  record, and four Genblaze manifests. All four manifests verified and every
+  referenced asset matched its recorded SHA-256.
+- The final 76,059-byte MP4 is exactly 4.000 seconds with H.264 video, AAC
+  audio, and German `mov_text` subtitles. Its SHA-256 is
+  `98c7f2979d7521fe123d9ff01817a1b9105b0fae9bb31a86d11d79259d6419a6`.
+  The private hosted player loaded the exact job media to ready state 4, and
+  the browser-downloaded bytes matched that hash.
+- Replaying the exact project/job handle returned the completed B2 checkpoint.
+  The project stayed at 37 objects and one speech manifest, its newest object
+  stayed the original `12-completed` event, and worker logs contained no
+  second ElevenLabs preflight or generation activity.
+- A preceding hosted request failed safely after storing only its source. It
+  never published a queue request and never called a provider. The source was
+  preserved, not deleted, and an immutable audit record was added at
+  `projects/intake-ea29e570c7224b7eb1cbf5d6998e1727/failures/hosted-intake-2026-07-30.json`.
+- Commit `22366132f24aeefcdb82aff073c8b65865534424` fixed that boundary by
+  reusing one request-scoped upload URL and publishing the immutable queue
+  request only after the source, source record, and initial status are durable.
+- No Backblaze cap, billing, lifecycle, or application-key setting was changed.
+  No command targeted the Dara API, Cloudflare tunnel, their units, or their
+  ports.
+
 ## Rollback
 
 Rollback affects Toluva only:

@@ -233,8 +233,12 @@ The hosted write and uploaded-job contract is:
 - Enforce the currently verified German/internal-training authorization lane
   before writing a request.
 - Generate opaque project, job, and source IDs on the server.
-- Write source, source record, immutable queue request, and initial status event
-  beneath that exact opaque project namespace.
+- Use one request-scoped B2 uploader and write, in order: source, source record,
+  initial status event, then immutable queue request. The request is the
+  claimable commit marker and must be published last.
+- A failure before the queue request exists is inert and must never be retried
+  as a job automatically. Preserve any durable source object and attach an
+  immutable failure record; do not delete or silently overwrite the evidence.
 - Keep B2 as the job-state authority. Browser session storage may hold only an
   opaque pointer used to recover the B2 state after refresh.
 - Resolve completed uploaded-job media from the immutable final record and
