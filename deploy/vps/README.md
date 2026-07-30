@@ -215,6 +215,45 @@ unrelated service units.
   command targeted the Dara API, Cloudflare tunnel, their units, or their
   ports.
 
+## Controlled transcript-block proof — July 30, 2026
+
+- The first controlled job, project
+  `intake-b36ed50b988547dfbc696789c1869c43` and job
+  `localize-8bb6ad370ec14e659f1a9008cb01dcac`, stored the correct
+  `review_required` QA record but failed closed after transcription. The fresh
+  in-memory reason codes were a tuple while the same immutable JSON record
+  reloads as a list. The integrity boundary stopped before translation or TTS,
+  and the failed job remains untouched as defect evidence.
+- Commit `e3634e28cbf187c732ee9e936af0728dc1339132` normalizes fresh QA
+  records to their exact JSON shape and adds the missing regression test. The
+  complete pipeline suite passed 101 tests.
+- The corrected worker image is `toluva-worker:queue-v3-e3634e2`, image ID
+  `sha256:f1e596beedd2477c81c1d7e872739c14df407e7d92e843f9d2b55d763cbba72d`,
+  and reported size 1,629,135,207 bytes. Offline readiness and the exact
+  hallucinated transcript check passed before cutover; `reason_codes` was a
+  JSON-shaped list.
+- The final controlled proof is project
+  `intake-eae21f6090ae4ede90070ce422b91e0d`, job
+  `localize-304ebb7c451e4db1b8000f7763d6ac60`. It used the exact 49,903-byte,
+  four-second source with SHA-256
+  `f5872bd6324abd57d5c0a534c11729989a9e3a5f10384783dc49d8a98c6ad41e`.
+- The job ended at append-only stage `06-transcript-blocked`. Its QA record
+  reports `review_required`, reason `suspicious_trailing_fragment`, mean word
+  confidence `0.6908042778571447`, and trailing evidence
+  `Languages which is...`.
+- The project contains 16 objects: governed intake, six status events, the
+  transcription checkpoint and Genblaze evidence, timed transcript and
+  segments, and transcript QA. It contains no translation, speech, caption,
+  composition, disclosure, authorization, human-review, or final object.
+- After refreshing the already-open tab onto Sites version 11, the production
+  UI rendered `PRE-TTS QUALITY GATE`, `NO TTS SPEND`, the reason, confidence,
+  trailing evidence, corrected-text field, and approval control. The approval
+  control was intentionally not used.
+- Worker logs recorded `TranscriptQualityBlocked` followed by idle ticks. The
+  corrected container remained healthy with zero restarts. No Argos,
+  ElevenLabs, captions, composition, or final-publication stage ran, and no
+  command targeted the Dara API or Cloudflare tunnel.
+
 ## Rollback
 
 Rollback affects Toluva only:

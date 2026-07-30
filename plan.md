@@ -1091,6 +1091,26 @@ Controlled production handshake completed on July 30:
   the immutable failed job remains evidence of the defect. Normalize the fresh
   record to its JSON shape, cover the boundary with a regression test, then use
   a new job for the visible blocked-state proof rather than rewriting history.
+- Commit `e3634e28cbf187c732ee9e936af0728dc1339132` implemented that JSON-shape
+  normalization and raised the complete pipeline suite to 101 passing tests.
+  The source-only fix image
+  `sha256:f1e596beedd2477c81c1d7e872739c14df407e7d92e843f9d2b55d763cbba72d`
+  passed offline readiness and the exact fresh-record regression before
+  replacing only the Toluva service.
+- The final controlled proof is project
+  `intake-eae21f6090ae4ede90070ce422b91e0d`, job
+  `localize-304ebb7c451e4db1b8000f7763d6ac60`. It ended at
+  `06-transcript-blocked` with reason `suspicious_trailing_fragment`, mean word
+  confidence `0.6908042778571447`, and trailing evidence
+  `Languages which is...`.
+- Its 16-object B2 namespace contains the source, request, transcription
+  checkpoint and Genblaze evidence, timed transcript/segments, six status
+  events, and transcript QA. It contains no translation, speech, captions,
+  composition, disclosure, authorization, human review, or final output.
+- The refreshed production UI rendered the complete pre-TTS review panel and
+  its explicit `NO TTS SPEND` state. The correction/approval control remains
+  untouched, so the job is durably blocked and cannot spend an ElevenLabs
+  credit.
 
 ## 16. Delivery Schedule
 
