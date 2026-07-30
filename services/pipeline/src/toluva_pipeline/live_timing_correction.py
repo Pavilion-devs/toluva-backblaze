@@ -9,7 +9,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
-from genblaze_core import KeyStrategy, Modality, ObjectStorageSink, Pipeline
+from genblaze_core import (
+    KeyStrategy,
+    Manifest,
+    Modality,
+    ObjectStorageSink,
+    Pipeline,
+)
 from genblaze_core.pipeline.result import PipelineResult
 from genblaze_elevenlabs import ElevenLabsTTSProvider
 from genblaze_s3 import S3StorageBackend
@@ -98,6 +104,33 @@ class GenblazeElevenLabsAttemptGenerator:
         self._language_code = language_code
         self._purpose = purpose
         self._results: dict[str, PipelineResult] = {}
+
+    def restore_parent(self, speech: SpeechArtifact) -> None:
+        """Rehydrate verified lineage after a worker restart without TTS."""
+
+        if speech.run_id in self._results:
+            return
+        manifest_bytes = self._backend.get(speech.manifest_key)
+        manifest = Manifest.model_validate_json(manifest_bytes)
+        audio_bytes = self._backend.get(speech.audio_key)
+        audio_sha256 = hashlib.sha256(audio_bytes).hexdigest()
+        if (
+            not manifest.verify()
+            or manifest.canonical_hash != speech.manifest_hash
+            or manifest.run.run_id != speech.run_id
+            or not any(
+                asset.sha256 == audio_sha256
+                for step in manifest.run.steps
+                for asset in step.assets
+            )
+        ):
+            raise AssetIntegrityError(
+                "Stored parent speech lineage failed verification"
+            )
+        self._results[speech.run_id] = PipelineResult(
+            manifest.run,
+            manifest,
+        )
 
     def generate(
         self,

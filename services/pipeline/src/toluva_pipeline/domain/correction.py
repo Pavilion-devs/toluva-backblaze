@@ -259,15 +259,55 @@ class TimingCorrectionEngine:
         self._policy = policy or TimingPolicy()
         self._journal = journal or NullCorrectionJournal()
 
-    def run(self, request: TimingCorrectionRequest) -> TimingCorrectionOutcome:
+    def run(
+        self,
+        request: TimingCorrectionRequest,
+        *,
+        prior_attempts: tuple[CorrectionAttempt, ...] = (),
+    ) -> TimingCorrectionOutcome:
         current_text = request.initial_translation.strip()
         _assert_protected_terms(current_text, request.protected_terms)
         instruction: str | None = None
         requested_action = "initial_generation"
         parent_run_id: str | None = None
-        attempts: list[CorrectionAttempt] = []
+        attempts = list(prior_attempts)
+        first_attempt_number = 1
 
-        for attempt_number in range(1, self._policy.max_retries + 2):
+        if attempts:
+            self._validate_prior_attempts(request, prior_attempts)
+            last_attempt = attempts[-1]
+            retry_number = last_attempt.retry_number
+            if retry_number is None:
+                raise RuntimeError(
+                    "prior timing attempts already contain a terminal decision"
+                )
+            instruction = self._retry_instruction(
+                request,
+                last_attempt,
+                retry_number=retry_number,
+            )
+            rewrite_context = AttemptContext(
+                attempt_number=retry_number,
+                translated_text=last_attempt.context.translated_text,
+                text_sha256=last_attempt.context.text_sha256,
+                instruction=instruction,
+                requested_action=last_attempt.timing_action,
+                parent_run_id=last_attempt.speech.run_id,
+                idempotency_key=last_attempt.context.idempotency_key,
+            )
+            current_text = self._rewrite(
+                request,
+                rewrite_context,
+                instruction,
+            )
+            requested_action = last_attempt.timing_action
+            parent_run_id = last_attempt.speech.run_id
+            first_attempt_number = retry_number
+
+        for attempt_number in range(
+            first_attempt_number,
+            self._policy.max_retries + 2,
+        ):
             context = AttemptContext(
                 attempt_number=attempt_number,
                 translated_text=current_text,
@@ -339,28 +379,11 @@ class TimingCorrectionEngine:
                 self._journal.correction_completed(outcome)
                 return outcome
 
-            if decision.action == TimingAction.RETRY_SHORTER:
-                instruction = build_shortening_instruction(
-                    text=current_text,
-                    source_language=request.source_language,
-                    target_language=request.target_language,
-                    current_seconds=speech.generated_seconds,
-                    target_seconds=request.target_seconds,
-                    protected_terms=request.protected_terms,
-                    retry_number=decision.retry_number,
-                )
-            elif decision.action == TimingAction.RETRY_EXPANDED:
-                instruction = build_expansion_instruction(
-                    text=current_text,
-                    source_language=request.source_language,
-                    target_language=request.target_language,
-                    current_seconds=speech.generated_seconds,
-                    target_seconds=request.target_seconds,
-                    protected_terms=request.protected_terms,
-                    retry_number=decision.retry_number,
-                )
-            else:
-                raise RuntimeError("non-terminal decision did not request a rewrite")
+            instruction = self._retry_instruction(
+                request,
+                attempt,
+                retry_number=decision.retry_number,
+            )
 
             rewrite_context = AttemptContext(
                 attempt_number=decision.retry_number,
@@ -371,29 +394,179 @@ class TimingCorrectionEngine:
                 parent_run_id=speech.run_id,
                 idempotency_key=context.idempotency_key,
             )
-            try:
-                rewritten = self._rewriter.rewrite(
-                    request,
-                    rewrite_context,
-                    instruction,
-                ).strip()
-                if not rewritten:
-                    raise RewriteError("rewriter returned an empty translation")
-                if rewritten == current_text:
-                    raise RewriteError("rewriter returned an unchanged translation")
-                _assert_protected_terms(rewritten, request.protected_terms)
-            except Exception as exc:
-                self._journal.rewrite_failed(
-                    request,
-                    rewrite_context,
-                    type(exc).__name__,
-                )
-                raise
-            current_text = rewritten
+            current_text = self._rewrite(
+                request,
+                rewrite_context,
+                instruction,
+            )
             requested_action = decision.action.value
             parent_run_id = speech.run_id
 
         raise RuntimeError("timing correction loop exceeded its bounded retry budget")
+
+    def _rewrite(
+        self,
+        request: TimingCorrectionRequest,
+        context: AttemptContext,
+        instruction: str,
+    ) -> str:
+        try:
+            rewritten = self._rewriter.rewrite(
+                request,
+                context,
+                instruction,
+            ).strip()
+            if not rewritten:
+                raise RewriteError("rewriter returned an empty translation")
+            if rewritten == context.translated_text:
+                raise RewriteError("rewriter returned an unchanged translation")
+            _assert_protected_terms(rewritten, request.protected_terms)
+            return rewritten
+        except Exception as exc:
+            self._journal.rewrite_failed(
+                request,
+                context,
+                type(exc).__name__,
+            )
+            raise
+
+    @staticmethod
+    def _retry_instruction(
+        request: TimingCorrectionRequest,
+        attempt: CorrectionAttempt,
+        *,
+        retry_number: int,
+    ) -> str:
+        if attempt.timing_action == TimingAction.RETRY_SHORTER.value:
+            return build_shortening_instruction(
+                text=attempt.context.translated_text,
+                source_language=request.source_language,
+                target_language=request.target_language,
+                current_seconds=attempt.speech.generated_seconds,
+                target_seconds=request.target_seconds,
+                protected_terms=request.protected_terms,
+                retry_number=retry_number,
+            )
+        if attempt.timing_action == TimingAction.RETRY_EXPANDED.value:
+            return build_expansion_instruction(
+                text=attempt.context.translated_text,
+                source_language=request.source_language,
+                target_language=request.target_language,
+                current_seconds=attempt.speech.generated_seconds,
+                target_seconds=request.target_seconds,
+                protected_terms=request.protected_terms,
+                retry_number=retry_number,
+            )
+        raise RuntimeError("non-terminal decision did not request a rewrite")
+
+    def _validate_prior_attempts(
+        self,
+        request: TimingCorrectionRequest,
+        attempts: tuple[CorrectionAttempt, ...],
+    ) -> None:
+        if len(attempts) > self._policy.max_retries:
+            raise RuntimeError("prior attempts exceed the resumable retry budget")
+        for expected_number, attempt in enumerate(attempts, start=1):
+            if attempt.context.attempt_number != expected_number:
+                raise RuntimeError("prior timing attempts are not contiguous")
+            if abs(attempt.slot_seconds - request.target_seconds) > 0.001:
+                raise RuntimeError("prior timing attempt slot does not match request")
+            expected_parent = (
+                attempts[expected_number - 2].speech.run_id
+                if expected_number > 1
+                else None
+            )
+            if (
+                attempt.context.parent_run_id != expected_parent
+                or attempt.speech.parent_run_id != expected_parent
+            ):
+                raise RuntimeError("prior timing attempt lineage is invalid")
+            if not (
+                attempt.speech.stored_manifest_valid
+                and attempt.speech.stored_manifest_hash_matches
+                and attempt.speech.stored_asset_hash_matches
+            ):
+                raise RuntimeError("prior speech asset or manifest is unverified")
+        if attempts[0].context.translated_text != request.initial_translation.strip():
+            raise RuntimeError(
+                "prior timing attempt does not match the initial translation"
+            )
+        last = attempts[-1]
+        if (
+            last.retry_number != len(attempts) + 1
+            or last.timing_action
+            not in {
+                TimingAction.RETRY_SHORTER.value,
+                TimingAction.RETRY_EXPANDED.value,
+            }
+        ):
+            raise RuntimeError(
+                "prior timing attempts do not end at a resumable rewrite"
+            )
+
+
+def correction_attempt_from_dict(payload: object) -> CorrectionAttempt:
+    """Validate one durable timing-attempt record into its domain shape."""
+
+    if not isinstance(payload, dict):
+        raise ValueError("timing attempt must be a JSON object")
+    context_payload = payload.get("context")
+    speech_payload = payload.get("speech")
+    if not isinstance(context_payload, dict) or not isinstance(
+        speech_payload,
+        dict,
+    ):
+        raise ValueError("timing attempt context or speech is malformed")
+    try:
+        return CorrectionAttempt(
+            context=AttemptContext(**context_payload),
+            speech=SpeechArtifact(**speech_payload),
+            slot_seconds=float(payload["slot_seconds"]),
+            drift_seconds=float(payload["drift_seconds"]),
+            drift_ratio=float(payload["drift_ratio"]),
+            absolute_drift_ratio=float(payload["absolute_drift_ratio"]),
+            timing_band=str(payload["timing_band"]),
+            timing_direction=str(payload["timing_direction"]),
+            timing_action=str(payload["timing_action"]),
+            reason=str(payload["reason"]),
+            retry_number=(
+                int(payload["retry_number"])
+                if payload.get("retry_number") is not None
+                else None
+            ),
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("timing attempt record is malformed") from exc
+
+
+def timing_correction_outcome_from_dict(
+    payload: object,
+) -> TimingCorrectionOutcome:
+    """Validate a durable correction summary into its domain shape."""
+
+    if not isinstance(payload, dict):
+        raise ValueError("timing correction summary must be a JSON object")
+    raw_attempts = payload.get("attempts")
+    if not isinstance(raw_attempts, (list, tuple)):
+        raise ValueError("timing correction summary has no attempts")
+    try:
+        return TimingCorrectionOutcome(
+            project_id=str(payload["project_id"]),
+            job_id=str(payload["job_id"]),
+            segment_id=str(payload["segment_id"]),
+            status=CorrectionStatus(str(payload["status"])),
+            selected_attempt_number=int(payload["selected_attempt_number"]),
+            attempts=tuple(
+                correction_attempt_from_dict(attempt)
+                for attempt in raw_attempts
+            ),
+            total_generated_characters=int(
+                payload["total_generated_characters"]
+            ),
+            total_generated_seconds=float(payload["total_generated_seconds"]),
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("timing correction summary is malformed") from exc
 
 
 class ScriptedTranslationRewriter:

@@ -1,7 +1,7 @@
 # Toluva — Product, Architecture, and Win Plan
 
 Last updated: July 30, 2026
-Status: transcript block/resume proven; multi-segment engine verified locally
+Status: multi-segment production runtime verified offline; controlled run pending
 Submission deadline: August 3, 2026 at 10:00 p.m. WAT  
 Internal submission target: August 3, 2026 at 6:00 p.m. WAT
 
@@ -1179,6 +1179,37 @@ Multi-segment engine contract completed locally on July 30:
   single-segment release until a controlled multi-segment source and rewrite
   policy are approved.
 
+Multi-segment production runtime wired and verified offline on July 30:
+
+- Removed the live worker's transcript-collapse boundary. Whisper's provider
+  segment IDs, start/end slots, and texts now remain distinct through
+  translation, speech, timing QA, captions, audio assembly, composition, and
+  the immutable final report.
+- Added one checkpointed Argos Genblaze stage per segment. Protected terms are
+  scoped only to segments that contain them, and every stored translation is
+  re-verified against both its manifest and bytes before TTS.
+- Replaced the non-rewriting live slice with an immutable B2-approved
+  translation-memory boundary. A red segment writes the exact requested
+  instruction and blocks before attempt 2 unless a hash-bound operator
+  revision already exists.
+- Added same-job timing resumption. The worker reloads completed attempts,
+  verifies their stored speech and manifests, reconstructs the Genblaze parent
+  result, and continues at the next attempt without repeating prior
+  ElevenLabs calls.
+- Added checkpointed Genblaze audio-master and final-composition stages. The
+  selected segment speech is collision-checked against source timing, mixed
+  into an exact-source-length WAV, and used as the explicit audio input to the
+  existing video/audio/WebVTT fan-in.
+- Extended the final record with per-segment translation, speech, timing,
+  red-to-green, resume, aggregate-summary, and localized-audio lineage while
+  keeping old immutable final records deserializable.
+- Added a durable `timing-blocked` queue state. The current UI recognizes it as
+  a separate timing gate instead of misreading it as a transcript failure.
+- The full pipeline suite now collects and passes 119 tests, the Sites build
+  passes, and this wiring phase made no Backblaze write, provider call, or
+  ElevenLabs credit spend. A source-only worker and Sites deployment are the
+  remaining zero-spend release steps before the controlled production proof.
+
 ## 16. Delivery Schedule
 
 ### July 29 — Lock and spike
@@ -1864,6 +1895,31 @@ attempt inspectable without weakening the logical fan-out model. A separate
 audio-master stage preserves real source gaps, prevents overlapping localized
 speech, and gives B2 and Genblaze a clear lineage boundary between segment
 generation and final composition.
+
+### 2026-07-30 — Human-approved timing rewrite memory
+
+Decision: Use immutable, hash-bound B2 translation revisions for timing
+correction. Store the exact source, current translation, requested action,
+instruction, duration target, protected terms, and parent run before looking
+for approval. Never represent Argos as an instruction-following constrained
+rewriter.
+
+Reason: The current offline translation model performs translation, not
+instruction-based rewriting. A human-approved memory is honest,
+governance-native, demoable, and deterministic. It also prevents a red timing
+result from silently triggering another billable call with unapproved wording.
+
+### 2026-07-30 — Same-job timing-approval resume
+
+Decision: A missing approved revision becomes a durable blocked state before
+the next TTS attempt. Once the exact approval exists, resume the same segment
+from its stored timing attempts and reconstruct `Pipeline.from_result()` from
+the verified parent manifest.
+
+Reason: Starting a new job would lose the strongest cost and lineage proof.
+Same-job resumption preserves the failed/blocked attempt, avoids duplicate
+speech spend, keeps the parent/child run link real across worker restarts, and
+stops all later segment fan-out until the blocked segment is resolved.
 
 ## 22. Official References
 

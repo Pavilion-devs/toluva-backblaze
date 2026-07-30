@@ -85,7 +85,8 @@ def test_audio_assembly_command_places_each_segment_on_source_timing(
     assert "adelay=0:all=1[segment_audio_0]" in filters
     assert "adelay=1200:all=1[segment_audio_1]" in filters
     assert "adelay=2400:all=1[segment_audio_2]" in filters
-    assert "amix=inputs=3" in filters
+    assert "anullsrc=r=48000:cl=stereo:d=4.000000[source_silence]" in filters
+    assert "amix=inputs=4" in filters
     assert "atrim=0:4.000000[localized_master]" in filters
 
 

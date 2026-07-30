@@ -40,10 +40,12 @@ class B2MultiSegmentJournal:
             raise ValueError(
                 "multi-segment outcome does not match the storage scope"
             )
+        outcome_payload = outcome.to_dict()
+        outcome_payload.pop("resumed_segment_ids", None)
         payload = {
             "schema_version": "1.0",
             "record_type": "multi_segment_localization_summary",
-            **outcome.to_dict(),
+            **outcome_payload,
         }
         data = (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode(
             "utf-8"

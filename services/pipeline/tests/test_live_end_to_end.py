@@ -2,8 +2,10 @@ from pathlib import Path
 
 import pytest
 
+from toluva_pipeline.domain.transcript import TimedSegment, TimedTranscript
 from toluva_pipeline.live_end_to_end import (
     LiveEndToEndReport,
+    _reviewed_timed_transcript,
     run_live_end_to_end,
 )
 from toluva_pipeline.settings import Settings
@@ -73,3 +75,46 @@ def test_live_end_to_end_durable_report_excludes_local_path() -> None:
     }
     report = LiveEndToEndReport(**values)
     assert "local_output_path" not in report.to_durable_dict()
+
+
+def test_reviewed_multi_segment_transcript_preserves_provider_slots() -> None:
+    transcript = TimedTranscript(
+        language="eng",
+        source="provider",
+        source_asset_sha256="a" * 64,
+        segments=(
+            TimedSegment("segment-001", 0.2, 1.4, "First fragment."),
+            TimedSegment("segment-002", 1.8, 3.0, "Second fragment."),
+        ),
+    )
+
+    reviewed = _reviewed_timed_transcript(
+        transcript,
+        "Welcome to Toluva. Keep every voice in time.",
+    )
+
+    assert [segment.text for segment in reviewed.segments] == [
+        "Welcome to Toluva.",
+        "Keep every voice in time.",
+    ]
+    assert [
+        (segment.start_seconds, segment.end_seconds)
+        for segment in reviewed.segments
+    ] == [(0.2, 1.4), (1.8, 3.0)]
+
+
+def test_reviewed_multi_segment_transcript_rejects_slot_count_change() -> None:
+    transcript = TimedTranscript(
+        language="eng",
+        source="provider",
+        source_asset_sha256="a" * 64,
+        segments=(
+            TimedSegment("segment-001", 0.2, 1.4, "First fragment."),
+            TimedSegment("segment-002", 1.8, 3.0, "Second fragment."),
+        ),
+    )
+    with pytest.raises(RuntimeError, match="one sentence"):
+        _reviewed_timed_transcript(
+            transcript,
+            "Welcome to Toluva without a second approved sentence.",
+        )

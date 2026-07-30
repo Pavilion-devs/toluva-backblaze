@@ -234,9 +234,13 @@ export async function readJobStatus(
     )
     .sort((left, right) => left.sequence - right.sequence);
   if (validEvents.length === 0) throw new Error("job_status_missing");
-  const currentState = validEvents.at(-1)!.state;
+  const currentEvent = validEvents.at(-1)!;
+  const currentState = currentEvent.state;
   let transcriptReview: TranscriptReviewView | undefined;
-  if (currentState === "blocked") {
+  if (
+    currentState === "blocked" &&
+    currentEvent.stage === "transcript-blocked"
+  ) {
     const quality = await getB2ProjectJson<TranscriptQualityRecord>(
       transcriptQualityKey(projectId, jobId),
     );

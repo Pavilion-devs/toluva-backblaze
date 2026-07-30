@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import shutil
 import subprocess
 import tempfile
@@ -11,7 +12,6 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Callable
-from urllib.parse import unquote, urlparse
 
 from genblaze_core import (
     Asset,
@@ -32,9 +32,14 @@ from toluva_pipeline.domain.authorization import (
     authorize_or_raise,
 )
 from toluva_pipeline.domain.correction import (
-    ScriptedTranslationRewriter,
-    TimingCorrectionEngine,
-    TimingCorrectionRequest,
+    CorrectionAttempt,
+    TimingCorrectionOutcome,
+)
+from toluva_pipeline.domain.multi_segment import (
+    MultiSegmentLocalizationEngine,
+    MultiSegmentLocalizationRequest,
+    MultiSegmentStatus,
+    SegmentTranslationArtifact,
 )
 from toluva_pipeline.domain.timing import TimingPolicy
 from toluva_pipeline.domain.transcript import TimedSegment, TimedTranscript, to_webvtt
@@ -50,6 +55,9 @@ from toluva_pipeline.live_timing_correction import (
 )
 from toluva_pipeline.live_tts import DEFAULT_MODEL, DEFAULT_STOCK_VOICE_ID
 from toluva_pipeline.media import probe_duration, probe_media
+from toluva_pipeline.providers.audio_assembler import (
+    ToluvaSegmentAudioAssembler,
+)
 from toluva_pipeline.providers.compositor import ToluvaFFmpegCompositor
 from toluva_pipeline.providers.transcriber import FasterWhisperProvider
 from toluva_pipeline.providers.translator import ArgosCTranslate2Provider
@@ -60,8 +68,13 @@ from toluva_pipeline.storage.b2 import (
 )
 from toluva_pipeline.storage.journal import B2CorrectionJournal
 from toluva_pipeline.storage.keys import StorageScope, ToluvaObjectKeys
+from toluva_pipeline.storage.multi_segment import B2MultiSegmentJournal
 from toluva_pipeline.storage.records import put_immutable
 from toluva_pipeline.storage.stages import B2StageJournal
+from toluva_pipeline.storage.translation_revisions import (
+    B2ApprovedTranslationRewriter,
+    RewriteApprovalRequired,
+)
 
 E2E_PROJECT_ID = "live-localization-project"
 E2E_JOB_ID = "english-to-german-v4"
@@ -81,6 +94,18 @@ ProgressCallback = Callable[[str, str], None]
 
 class EndToEndIntegrityError(RuntimeError):
     """Raised when a live input, manifest, or stored output cannot be verified."""
+
+
+class TimingCorrectionBlocked(RuntimeError):
+    """Raised when timing QA stops before an unapproved or unsafe retry."""
+
+    job_state = "blocked"
+
+    def __init__(self, segment_id: str) -> None:
+        super().__init__(
+            f"Segment {segment_id} requires an approved timing revision."
+        )
+        self.segment_id = segment_id
 
 
 @dataclass(frozen=True)
@@ -147,6 +172,18 @@ class LiveEndToEndReport:
     transcript_quality_decision: str = "not-recorded"
     transcript_review_key: str | None = None
     effective_source_text: str | None = None
+    multi_segment_summary_key: str | None = None
+    segment_results: tuple[dict[str, object], ...] = ()
+    translation_run_ids: tuple[str, ...] = ()
+    translation_asset_keys: tuple[str, ...] = ()
+    translation_manifest_keys: tuple[str, ...] = ()
+    selected_speech_keys: tuple[str, ...] = ()
+    selected_speech_manifest_keys: tuple[str, ...] = ()
+    localized_audio_run_id: str | None = None
+    localized_audio_asset_key: str | None = None
+    localized_audio_manifest_key: str | None = None
+    red_to_green_segment_ids: tuple[str, ...] = ()
+    resumed_segment_ids: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -279,6 +316,205 @@ def _verified_pipeline_asset(
     )
 
 
+def _verified_checkpoint_asset(
+    *,
+    checkpoint: dict[str, object],
+    backend: object,
+) -> VerifiedPipelineAsset:
+    required = (
+        "asset_key",
+        "asset_sha256",
+        "manifest_key",
+        "manifest_hash",
+        "run_id",
+    )
+    if any(not isinstance(checkpoint.get(key), str) for key in required):
+        raise EndToEndIntegrityError("Stored stage checkpoint is malformed")
+    asset_key = str(checkpoint["asset_key"])
+    manifest_key = str(checkpoint["manifest_key"])
+    stored_bytes = backend.get(asset_key)
+    stored_manifest = Manifest.model_validate_json(backend.get(manifest_key))
+    asset_matches = _sha256(stored_bytes) == checkpoint["asset_sha256"]
+    manifest_valid = stored_manifest.verify()
+    manifest_hash_matches = (
+        stored_manifest.canonical_hash == checkpoint["manifest_hash"]
+    )
+    if (
+        not asset_matches
+        or not manifest_valid
+        or not manifest_hash_matches
+        or stored_manifest.run.run_id != checkpoint["run_id"]
+    ):
+        raise EndToEndIntegrityError(
+            "Stored checkpoint manifest or asset hash verification failed"
+        )
+    return VerifiedPipelineAsset(
+        asset_key=asset_key,
+        asset_sha256=str(checkpoint["asset_sha256"]),
+        manifest_key=manifest_key,
+        manifest_hash=str(checkpoint["manifest_hash"]),
+        run_id=str(checkpoint["run_id"]),
+        stored_manifest_valid=manifest_valid,
+        stored_asset_hash_matches=asset_matches,
+        bytes=stored_bytes,
+    )
+
+
+class _CheckpointedArgosSegmentTranslator:
+    """Run or replay one verified Argos Genblaze stage per source segment."""
+
+    def __init__(
+        self,
+        *,
+        backend: object,
+        stage_journal: B2StageJournal,
+        keys: ToluvaObjectKeys,
+        scope: StorageScope,
+        packages_dir: Path,
+        version: str,
+        resumed: list[str],
+    ) -> None:
+        self._backend = backend
+        self._stage_journal = stage_journal
+        self._keys = keys
+        self._scope = scope
+        self._packages_dir = packages_dir
+        self._version = version
+        self._resumed = resumed
+
+    def translate(
+        self,
+        request: MultiSegmentLocalizationRequest,
+        segment: TimedSegment,
+        protected_terms: tuple[str, ...],
+    ) -> SegmentTranslationArtifact:
+        stage = f"translation-argos-en-de-{segment.segment_id}"
+        checkpoint = self._stage_journal.completion(stage)
+        if checkpoint is None:
+            idempotency_key = _sha256(
+                (
+                    f"{request.job_id}\0{segment.segment_id}\0"
+                    f"{segment.text}\0{ARGOS_MODEL}"
+                ).encode()
+            )
+            self._stage_journal.begin(
+                stage,
+                idempotency_key=idempotency_key,
+                provider="argos-translate-offline",
+                model=ARGOS_MODEL,
+            )
+            sink = ObjectStorageSink(
+                self._backend,
+                prefix=self._keys.translation_genblaze_prefix(
+                    self._scope,
+                    segment.segment_id,
+                    self._version,
+                ),
+                key_strategy=KeyStrategy.HIERARCHICAL,
+            )
+            try:
+                result = (
+                    Pipeline(
+                        "toluva-live-segment-translation",
+                        tenant_id="toluva-demo",
+                        project_id=request.project_id,
+                        preflight=False,
+                    )
+                    .metadata(
+                        job_id=request.job_id,
+                        segment_id=segment.segment_id,
+                        idempotency_key=idempotency_key,
+                    )
+                    .step(
+                        ArgosCTranslate2Provider(
+                            packages_dir=self._packages_dir
+                        ),
+                        model=ARGOS_MODEL,
+                        prompt=segment.text,
+                        modality=Modality.TEXT,
+                        metadata={
+                            "operation": "protected_term_translation",
+                            "live_model": True,
+                            "segment_id": segment.segment_id,
+                        },
+                        source_language="en",
+                        target_language="de",
+                        protected_terms=list(protected_terms),
+                    )
+                    .run(
+                        sink=sink,
+                        raise_on_failure=True,
+                        timeout=120,
+                        pipeline_timeout=180,
+                        max_retries=0,
+                    )
+                )
+                verified = _verified_pipeline_asset(
+                    result=result,
+                    sink=sink,
+                    backend=self._backend,
+                )
+                checkpoint = {
+                    "asset_key": verified.asset_key,
+                    "asset_sha256": verified.asset_sha256,
+                    "manifest_key": verified.manifest_key,
+                    "manifest_hash": verified.manifest_hash,
+                    "run_id": verified.run_id,
+                    "segment_id": segment.segment_id,
+                    "source_text_sha256": _sha256(
+                        segment.text.encode("utf-8")
+                    ),
+                }
+                self._stage_journal.complete(stage, checkpoint)
+            except Exception as exc:
+                self._stage_journal.fail(
+                    stage,
+                    error_type=type(exc).__name__,
+                )
+                raise
+        else:
+            self._resumed.append(stage)
+
+        if (
+            checkpoint.get("segment_id") != segment.segment_id
+            or checkpoint.get("source_text_sha256")
+            != _sha256(segment.text.encode("utf-8"))
+        ):
+            raise EndToEndIntegrityError(
+                "Stored translation checkpoint does not match its segment"
+            )
+        verified = _verified_checkpoint_asset(
+            checkpoint=checkpoint,
+            backend=self._backend,
+        )
+        payload = json.loads(verified.bytes)
+        if (
+            not isinstance(payload, dict)
+            or payload.get("record_type") != "machine_translation"
+            or payload.get("source_text") != segment.text
+            or tuple(payload.get("protected_terms", ())) != protected_terms
+        ):
+            raise EndToEndIntegrityError(
+                "Stored translation payload does not match its segment"
+            )
+        translated_text = str(payload.get("translated_text", "")).strip()
+        return SegmentTranslationArtifact(
+            segment_id=segment.segment_id,
+            source_text=segment.text,
+            translated_text=translated_text,
+            provider="argos-translate-offline",
+            model=ARGOS_MODEL,
+            run_id=verified.run_id,
+            asset_key=verified.asset_key,
+            manifest_key=verified.manifest_key,
+            stored_manifest_valid=verified.stored_manifest_valid,
+            stored_manifest_hash_matches=(
+                verified.manifest_hash == checkpoint["manifest_hash"]
+            ),
+            stored_asset_hash_matches=verified.stored_asset_hash_matches,
+        )
+
+
 def _source_asset(path: Path, source_key: str) -> Asset:
     source_bytes = path.read_bytes()
     return Asset(
@@ -301,26 +537,6 @@ def _source_asset(path: Path, source_key: str) -> Asset:
             "fixture_transcript": False,
         },
     )
-
-
-def _selected_speech(summary: dict[str, object]) -> dict[str, object]:
-    selected_number = summary["selected_attempt_number"]
-    attempts = summary["attempts"]
-    if not isinstance(attempts, (list, tuple)):
-        raise EndToEndIntegrityError("Timing summary has no attempt list")
-    selected = next(
-        (
-            item
-            for item in attempts
-            if isinstance(item, dict)
-            and isinstance(item.get("context"), dict)
-            and item["context"].get("attempt_number") == selected_number
-        ),
-        None,
-    )
-    if not isinstance(selected, dict) or not isinstance(selected.get("speech"), dict):
-        raise EndToEndIntegrityError("Timing summary has no selected speech")
-    return selected["speech"]
 
 
 def _assert_speech_integrity(
@@ -360,6 +576,49 @@ def _stream_types(path: Path) -> tuple[str, ...]:
             "Final media must contain video, audio, and subtitle streams"
         )
     return values
+
+
+def _reviewed_timed_transcript(
+    transcript: TimedTranscript,
+    corrected_text: str,
+) -> TimedTranscript:
+    """Apply one approved sentence to each preserved provider time slot."""
+
+    if len(transcript.segments) == 1:
+        replacements = (corrected_text.strip(),)
+    else:
+        replacements = tuple(
+            match.group(0).strip()
+            for match in re.finditer(
+                r"[^.!?]+(?:[.!?]+(?=\s|$)|$)",
+                corrected_text.strip(),
+            )
+            if match.group(0).strip()
+        )
+        if len(replacements) != len(transcript.segments):
+            raise EndToEndIntegrityError(
+                "A multi-segment transcript correction must preserve one "
+                "sentence per timed source segment"
+            )
+    return TimedTranscript(
+        language=transcript.language,
+        source=transcript.source,
+        source_asset_sha256=transcript.source_asset_sha256,
+        segments=tuple(
+            TimedSegment(
+                segment_id=segment.segment_id,
+                start_seconds=segment.start_seconds,
+                end_seconds=segment.end_seconds,
+                text=replacement,
+                speaker_id=segment.speaker_id,
+            )
+            for segment, replacement in zip(
+                transcript.segments,
+                replacements,
+                strict=True,
+            )
+        ),
+    )
 
 
 def _existing_report(
@@ -617,26 +876,6 @@ def run_live_end_to_end(
             raise EndToEndIntegrityError(
                 "The bounded source produced no speech segment"
             )
-        if len(timed_transcript.segments) > 1:
-            first = timed_transcript.segments[0]
-            last = timed_transcript.segments[-1]
-            timed_transcript = TimedTranscript(
-                language=timed_transcript.language,
-                source=timed_transcript.source,
-                source_asset_sha256=timed_transcript.source_asset_sha256,
-                segments=(
-                    TimedSegment(
-                        segment_id="segment-001",
-                        start_seconds=first.start_seconds,
-                        end_seconds=last.end_seconds,
-                        text=" ".join(
-                            segment.text.strip()
-                            for segment in timed_transcript.segments
-                        ),
-                        speaker_id=first.speaker_id,
-                    ),
-                ),
-            )
         normalized_transcript = {
             "schema_version": "1.0",
             "record_type": "timed_transcript",
@@ -663,8 +902,7 @@ def run_live_end_to_end(
             _json_bytes(normalized_segments),
             content_type="application/json",
         )
-        source_segment = timed_transcript.segments[0]
-        detected_source_text = source_segment.text
+        detected_source_text = str(raw_transcript["text"]).strip()
         progress(
             "transcribed",
             "Stored the timed transcript and protected-term decision in B2.",
@@ -755,12 +993,9 @@ def run_live_end_to_end(
                     project_id=project_id,
                     job_id=job_id,
                 )
-                source_segment = TimedSegment(
-                    segment_id=source_segment.segment_id,
-                    start_seconds=source_segment.start_seconds,
-                    end_seconds=source_segment.end_seconds,
-                    text=corrected_text,
-                    speaker_id=source_segment.speaker_id,
+                timed_transcript = _reviewed_timed_transcript(
+                    timed_transcript,
+                    corrected_text,
                 )
                 transcript_quality_decision = "human-approved"
                 resumed.append("transcript-human-review")
@@ -786,101 +1021,14 @@ def run_live_end_to_end(
                 "Transcript confidence, protected terms, and trailing-fragment checks passed.",
             )
 
-        translation_stage = "translation-argos-en-de"
-        translation_checkpoint = stage_journal.completion(translation_stage)
-        if translation_checkpoint is None:
-            progress(
-                "translating",
-                "Translating English to German with the pinned offline model.",
-            )
-            translation_idempotency = _sha256(
-                f"{job_id}\0{source_segment.text}\0{ARGOS_MODEL}".encode()
-            )
-            stage_journal.begin(
-                translation_stage,
-                idempotency_key=translation_idempotency,
-                provider="argos-translate-offline",
-                model=ARGOS_MODEL,
-            )
-            translation_sink = ObjectStorageSink(
-                storage.backend,
-                prefix=keys.translation_genblaze_prefix(
-                    scope,
-                    source_segment.segment_id,
-                    version,
-                ),
-                key_strategy=KeyStrategy.HIERARCHICAL,
-            )
-            try:
-                translation_result = (
-                    Pipeline(
-                        "toluva-live-translation",
-                        tenant_id="toluva-demo",
-                        project_id=project_id,
-                        preflight=False,
-                    )
-                    .metadata(
-                        job_id=job_id,
-                        segment_id=source_segment.segment_id,
-                        idempotency_key=translation_idempotency,
-                    )
-                    .step(
-                        ArgosCTranslate2Provider(packages_dir=argos_packages),
-                        model=ARGOS_MODEL,
-                        prompt=source_segment.text,
-                        modality=Modality.TEXT,
-                        metadata={
-                            "operation": "protected_term_translation",
-                            "live_model": True,
-                        },
-                        source_language="en",
-                        target_language="de",
-                        protected_terms=list(protected_terms),
-                    )
-                    .run(
-                        sink=translation_sink,
-                        raise_on_failure=True,
-                        timeout=120,
-                        pipeline_timeout=180,
-                        max_retries=0,
-                    )
-                )
-                translation_asset = _verified_pipeline_asset(
-                    result=translation_result,
-                    sink=translation_sink,
-                    backend=storage.backend,
-                )
-                translation_checkpoint = {
-                    "asset_key": translation_asset.asset_key,
-                    "asset_sha256": translation_asset.asset_sha256,
-                    "manifest_key": translation_asset.manifest_key,
-                    "manifest_hash": translation_asset.manifest_hash,
-                    "run_id": translation_asset.run_id,
-                }
-                stage_journal.complete(translation_stage, translation_checkpoint)
-            except Exception as exc:
-                stage_journal.fail(
-                    translation_stage,
-                    error_type=type(exc).__name__,
-                )
-                raise
-        else:
-            resumed.append(translation_stage)
-
-        translation_bytes = storage.backend.get(
-            str(translation_checkpoint["asset_key"])
-        )
-        if _sha256(translation_bytes) != translation_checkpoint["asset_sha256"]:
-            raise EndToEndIntegrityError("Stored translation asset hash changed")
-        translation_payload = json.loads(translation_bytes)
-        translated_text = str(translation_payload["translated_text"]).strip()
-        if any(term not in translated_text for term in protected_terms):
-            raise EndToEndIntegrityError(
-                "Stored translation lost a protected term"
-            )
-        progress(
-            "translated",
-            "Verified the German translation and its Genblaze manifest.",
+        translator = _CheckpointedArgosSegmentTranslator(
+            backend=storage.backend,
+            stage_journal=stage_journal,
+            keys=keys,
+            scope=scope,
+            packages_dir=argos_packages,
+            version=version,
+            resumed=resumed,
         )
 
         now = datetime.now(UTC)
@@ -946,39 +1094,55 @@ def run_live_end_to_end(
             "Voice language and internal-training purpose passed before TTS.",
         )
 
-        timing_summary_key = keys.timing_summary(
-            scope,
-            source_segment.segment_id,
+        correction_journal = B2CorrectionJournal(
+            storage.backend,
+            keys=keys,
+            scope=scope,
         )
-        if storage.backend.exists(timing_summary_key):
-            timing_summary = json.loads(storage.backend.get(timing_summary_key))
-            resumed.append("timing-correction")
-        else:
-            progress(
-                "synthesizing",
-                "Generating disclosed German speech through Genblaze and ElevenLabs.",
+        generator = GenblazeElevenLabsAttemptGenerator(
+            settings=settings,
+            backend=storage.backend,
+            scope=scope,
+            keys=keys,
+            authorization_id=authorization_id,
+            authorization_code=authorization_decision.code.value,
+            language=E2E_LANGUAGE,
+            language_code="de",
+            purpose="internal-training",
+        )
+        completed_timings: dict[str, TimingCorrectionOutcome] = {}
+        prior_attempts: dict[str, tuple[CorrectionAttempt, ...]] = {}
+        for segment in timed_transcript.segments:
+            completed = correction_journal.completed_outcome(
+                segment.segment_id
             )
-            correction_journal = B2CorrectionJournal(
-                storage.backend,
-                keys=keys,
-                scope=scope,
+            if completed is not None:
+                completed_timings[segment.segment_id] = completed
+                continue
+            durable_attempts = correction_journal.completed_attempts(
+                segment.segment_id,
+                max_attempts=settings.max_timing_retries + 1,
             )
-            correction_journal.assert_fresh(source_segment.segment_id)
-            correction_engine = TimingCorrectionEngine(
-                generator=GenblazeElevenLabsAttemptGenerator(
-                    settings=settings,
-                    backend=storage.backend,
-                    scope=scope,
+            prior_attempts[segment.segment_id] = durable_attempts
+            for attempt in durable_attempts:
+                generator.restore_parent(attempt.speech)
+
+        progress(
+            "translating",
+            "Translating each preserved source segment with the pinned offline model.",
+        )
+        progress(
+            "synthesizing",
+            "Generating disclosed speech in source order with bounded spend.",
+        )
+        try:
+            multi_outcome = MultiSegmentLocalizationEngine(
+                translator=translator,
+                generator=generator,
+                rewriter=B2ApprovedTranslationRewriter(
+                    storage.backend,
                     keys=keys,
-                    authorization_id=authorization_id,
-                    authorization_code=authorization_decision.code.value,
-                    language=E2E_LANGUAGE,
-                    language_code="de",
-                    purpose="internal-training",
-                ),
-                rewriter=ScriptedTranslationRewriter(
-                    (),
-                    name="no-rewrite-needed-for-live-slice",
+                    scope=scope,
                 ),
                 policy=TimingPolicy(
                     green_threshold=settings.green_drift_threshold,
@@ -986,54 +1150,54 @@ def run_live_end_to_end(
                     max_retries=settings.max_timing_retries,
                 ),
                 journal=correction_journal,
-            )
-            correction_outcome = correction_engine.run(
-                TimingCorrectionRequest(
+                completed_timing_loader=completed_timings.get,
+                prior_attempts_loader=lambda segment_id: prior_attempts.get(
+                    segment_id,
+                    (),
+                ),
+            ).run(
+                MultiSegmentLocalizationRequest(
                     project_id=project_id,
                     job_id=job_id,
-                    segment_id=source_segment.segment_id,
-                    source_text=source_segment.text,
-                    initial_translation=translated_text,
+                    transcript=timed_transcript,
                     source_language="English",
                     target_language="German",
-                    target_seconds=source_segment.end_seconds
-                    - source_segment.start_seconds,
                     protected_terms=protected_terms,
                 )
             )
-            timing_summary = {
-                "schema_version": "1.0",
-                "record_type": "timing_correction_summary",
-                **correction_outcome.to_dict(),
-            }
+        except RewriteApprovalRequired as exc:
+            progress(
+                "timing-blocked",
+                "Timing QA recorded the first speech attempt and stopped before an unapproved retry.",
+            )
+            raise TimingCorrectionBlocked(exc.segment_id) from exc
+
+        multi_segment_journal = B2MultiSegmentJournal(
+            storage.backend,
+            keys=keys,
+            scope=scope,
+            version=version,
+        )
+        multi_segment_summary_key = multi_segment_journal.store(multi_outcome)
+        if multi_outcome.status == MultiSegmentStatus.HUMAN_REVIEW:
+            progress(
+                "timing-blocked",
+                "A segment exhausted its bounded retry budget and requires human review.",
+            )
+            raise TimingCorrectionBlocked(
+                multi_outcome.stopped_segment_id or "unknown-segment"
+            )
+        progress(
+            "translated",
+            "Verified every German segment translation and Genblaze manifest.",
+        )
         progress(
             "timing-qa",
-            "Measured generated speech and selected the bounded timing action.",
+            "Measured every segment and selected the bounded timing action.",
         )
 
-        speech = _selected_speech(timing_summary)
-        speech_bytes = _assert_speech_integrity(storage.backend, speech)
-        selected_attempt_number = timing_summary["selected_attempt_number"]
-        attempts = timing_summary["attempts"]
-        selected_attempt = next(
-            item
-            for item in attempts
-            if item["context"]["attempt_number"] == selected_attempt_number
-        )
-
-        localized_transcript = TimedTranscript(
-            language=E2E_LANGUAGE,
+        localized_transcript = multi_outcome.to_localized_transcript(
             source="argos-translate-offline-live",
-            source_asset_sha256=str(source.sha256),
-            segments=(
-                TimedSegment(
-                    segment_id=source_segment.segment_id,
-                    start_seconds=source_segment.start_seconds,
-                    end_seconds=source_segment.end_seconds,
-                    text=translated_text,
-                    speaker_id="elevenlabs-stock-voice",
-                ),
-            ),
         )
         captions_bytes = to_webvtt(localized_transcript).encode("utf-8")
         put_immutable(
@@ -1042,27 +1206,148 @@ def run_live_end_to_end(
             captions_bytes,
             content_type="text/vtt",
         )
-        speech_path = temp_root / "localized-de.mp3"
+        segment_audio_assets: list[Asset] = []
+        for result in multi_outcome.segment_results:
+            speech = result.selected_speech
+            speech_bytes = _assert_speech_integrity(
+                storage.backend,
+                asdict(speech),
+            )
+            speech_path = (
+                temp_root
+                / f"{result.source_segment.segment_id}-selected.mp3"
+            )
+            speech_path.write_bytes(speech_bytes)
+            segment_audio_assets.append(
+                Asset(
+                    url=local_file_url(speech_path.resolve()),
+                    media_type="audio/mpeg",
+                    sha256=_sha256(speech_bytes),
+                    size_bytes=len(speech_bytes),
+                    duration=speech.generated_seconds,
+                    audio=AudioMetadata(codec="mp3"),
+                    metadata={
+                        "segment_id": result.source_segment.segment_id,
+                        "b2_key": speech.audio_key,
+                        "genblaze_manifest_key": speech.manifest_key,
+                        "selected_timing_attempt": (
+                            result.timing.selected_attempt_number
+                        ),
+                    },
+                )
+            )
+
+        audio_stage = f"localized-audio-assembly-{version}"
+        audio_checkpoint = stage_journal.completion(audio_stage)
+        if audio_checkpoint is None:
+            audio_idempotency = _sha256(
+                (
+                    f"{job_id}\0{source.sha256}\0"
+                    + "\0".join(
+                        asset.sha256 or "" for asset in segment_audio_assets
+                    )
+                ).encode()
+            )
+            stage_journal.begin(
+                audio_stage,
+                idempotency_key=audio_idempotency,
+                provider="toluva-segment-audio-assembler",
+                model="ffmpeg-segment-audio-v1",
+            )
+            audio_sink = ObjectStorageSink(
+                storage.backend,
+                prefix=keys.localized_audio_genblaze_prefix(scope, version),
+                key_strategy=KeyStrategy.HIERARCHICAL,
+            )
+            try:
+                audio_result = (
+                    Pipeline(
+                        "toluva-live-segment-audio-assembly",
+                        tenant_id="toluva-demo",
+                        project_id=project_id,
+                        preflight=False,
+                    )
+                    .metadata(
+                        job_id=job_id,
+                        language=E2E_LANGUAGE,
+                        source_key=source_key,
+                        segment_count=len(segment_audio_assets),
+                        idempotency_key=audio_idempotency,
+                    )
+                    .step(
+                        ToluvaSegmentAudioAssembler(output_dir=temp_root),
+                        model="ffmpeg-segment-audio-v1",
+                        modality=Modality.AUDIO,
+                        expected_duration_sec=source.duration,
+                        external_inputs=segment_audio_assets,
+                        metadata={
+                            "operation": "source_timed_audio_fan_in",
+                            "segment_count": len(segment_audio_assets),
+                        },
+                        placements=[
+                            {
+                                "segment_id": result.source_segment.segment_id,
+                                "start_seconds": (
+                                    result.source_segment.start_seconds
+                                ),
+                                "end_seconds": (
+                                    result.source_segment.end_seconds
+                                ),
+                            }
+                            for result in multi_outcome.segment_results
+                        ],
+                        target_seconds=source.duration,
+                    )
+                    .run(
+                        sink=audio_sink,
+                        raise_on_failure=True,
+                        timeout=120,
+                        pipeline_timeout=180,
+                        max_retries=0,
+                    )
+                )
+                verified_audio = _verified_pipeline_asset(
+                    result=audio_result,
+                    sink=audio_sink,
+                    backend=storage.backend,
+                )
+                audio_checkpoint = {
+                    "asset_key": verified_audio.asset_key,
+                    "asset_sha256": verified_audio.asset_sha256,
+                    "manifest_key": verified_audio.manifest_key,
+                    "manifest_hash": verified_audio.manifest_hash,
+                    "run_id": verified_audio.run_id,
+                }
+                stage_journal.complete(audio_stage, audio_checkpoint)
+            except Exception as exc:
+                stage_journal.fail(
+                    audio_stage,
+                    error_type=type(exc).__name__,
+                )
+                raise
+        else:
+            resumed.append(audio_stage)
+        localized_audio = _verified_checkpoint_asset(
+            checkpoint=audio_checkpoint,
+            backend=storage.backend,
+        )
+        speech_path = temp_root / "localized-de.wav"
         captions_path = temp_root / "localized-de.vtt"
-        speech_path.write_bytes(speech_bytes)
+        speech_path.write_bytes(localized_audio.bytes)
         captions_path.write_bytes(captions_bytes)
 
-        composition_sink = ObjectStorageSink(
-            storage.backend,
-            prefix=keys.composition_genblaze_prefix(scope, version),
-            key_strategy=KeyStrategy.HIERARCHICAL,
-        )
         audio_asset = Asset(
             url=local_file_url(speech_path.resolve()),
-            media_type="audio/mpeg",
-            sha256=_sha256(speech_bytes),
-            size_bytes=len(speech_bytes),
-            duration=float(speech["generated_seconds"]),
-            audio=AudioMetadata(codec="mp3"),
+            media_type="audio/wav",
+            sha256=localized_audio.asset_sha256,
+            size_bytes=len(localized_audio.bytes),
+            duration=float(source.duration),
+            audio=AudioMetadata(codec="pcm_s16le"),
             metadata={
-                "b2_key": speech["audio_key"],
-                "genblaze_manifest_key": speech["manifest_key"],
-                "selected_timing_attempt": selected_attempt_number,
+                "b2_key": localized_audio.asset_key,
+                "genblaze_manifest_key": localized_audio.manifest_key,
+                "segment_count": len(multi_outcome.segment_results),
+                "placement_policy": "source-timed-collision-checked",
             },
         )
         caption_asset = Asset(
@@ -1073,70 +1358,109 @@ def run_live_end_to_end(
             duration=float(source.duration),
             metadata={"b2_key": captions_key, "language": E2E_LANGUAGE},
         )
-        local_composition_outputs: list[str] = []
-
-        def capture_local_composition(event: object) -> None:
-            step_event = getattr(event, "step", None)
-            assets = getattr(step_event, "assets", None)
-            if assets:
-                local_composition_outputs.append(assets[0].url)
-
         progress(
             "composing",
             "Fanning source video, selected speech, and captions into the final MP4.",
         )
-        composition_result = (
-            Pipeline(
-                "toluva-live-localized-composition",
-                tenant_id="toluva-demo",
-                project_id=project_id,
-                preflight=False,
+        composition_stage = f"localized-composition-{version}"
+        composition_checkpoint = stage_journal.completion(composition_stage)
+        if composition_checkpoint is None:
+            composition_idempotency = _sha256(
+                (
+                    f"{job_id}\0{source.sha256}\0"
+                    f"{localized_audio.asset_sha256}\0{_sha256(captions_bytes)}"
+                ).encode()
             )
-            .metadata(
-                job_id=job_id,
-                language=E2E_LANGUAGE,
-                source_key=source_key,
-                captions_key=captions_key,
-                selected_speech_key=speech["audio_key"],
-                fan_in_inputs=("video", "localized_audio", "captions"),
-            )
-            .step(
-                ToluvaFFmpegCompositor(output_dir=temp_root),
+            stage_journal.begin(
+                composition_stage,
+                idempotency_key=composition_idempotency,
+                provider="toluva-ffmpeg-compositor",
                 model="ffmpeg-captioned-mp4-v1",
-                modality=Modality.VIDEO,
-                expected_duration_sec=source.duration,
-                external_inputs=[source, audio_asset, caption_asset],
-                metadata={
-                    "operation": "localized_video_fan_in",
-                    "input_count": 3,
-                    "caption_delivery": "embedded-mov_text-and-sidecar-vtt",
-                },
-                target_seconds=source.duration,
-                subtitle_language="deu",
             )
-            .run(
-                sink=composition_sink,
-                raise_on_failure=True,
-                timeout=120,
-                pipeline_timeout=180,
-                max_retries=0,
-                on_step_complete=capture_local_composition,
+            composition_sink = ObjectStorageSink(
+                storage.backend,
+                prefix=keys.composition_genblaze_prefix(scope, version),
+                key_strategy=KeyStrategy.HIERARCHICAL,
             )
-        )
-        composition_asset = _verified_pipeline_asset(
-            result=composition_result,
-            sink=composition_sink,
+            try:
+                composition_result = (
+                    Pipeline(
+                        "toluva-live-localized-composition",
+                        tenant_id="toluva-demo",
+                        project_id=project_id,
+                        preflight=False,
+                    )
+                    .metadata(
+                        job_id=job_id,
+                        language=E2E_LANGUAGE,
+                        source_key=source_key,
+                        captions_key=captions_key,
+                        localized_audio_key=localized_audio.asset_key,
+                        selected_speech_keys=tuple(
+                            result.selected_speech.audio_key
+                            for result in multi_outcome.segment_results
+                        ),
+                        fan_in_inputs=(
+                            "video",
+                            "localized_audio",
+                            "captions",
+                        ),
+                        idempotency_key=composition_idempotency,
+                    )
+                    .step(
+                        ToluvaFFmpegCompositor(output_dir=temp_root),
+                        model="ffmpeg-captioned-mp4-v1",
+                        modality=Modality.VIDEO,
+                        expected_duration_sec=source.duration,
+                        external_inputs=[source, audio_asset, caption_asset],
+                        metadata={
+                            "operation": "localized_video_fan_in",
+                            "input_count": 3,
+                            "caption_delivery": (
+                                "embedded-mov_text-and-sidecar-vtt"
+                            ),
+                        },
+                        target_seconds=source.duration,
+                        subtitle_language="deu",
+                    )
+                    .run(
+                        sink=composition_sink,
+                        raise_on_failure=True,
+                        timeout=120,
+                        pipeline_timeout=180,
+                        max_retries=0,
+                    )
+                )
+                verified_composition = _verified_pipeline_asset(
+                    result=composition_result,
+                    sink=composition_sink,
+                    backend=storage.backend,
+                )
+                composition_checkpoint = {
+                    "asset_key": verified_composition.asset_key,
+                    "asset_sha256": verified_composition.asset_sha256,
+                    "manifest_key": verified_composition.manifest_key,
+                    "manifest_hash": verified_composition.manifest_hash,
+                    "run_id": verified_composition.run_id,
+                }
+                stage_journal.complete(
+                    composition_stage,
+                    composition_checkpoint,
+                )
+            except Exception as exc:
+                stage_journal.fail(
+                    composition_stage,
+                    error_type=type(exc).__name__,
+                )
+                raise
+        else:
+            resumed.append(composition_stage)
+        composition_asset = _verified_checkpoint_asset(
+            checkpoint=composition_checkpoint,
             backend=storage.backend,
         )
-        if not local_composition_outputs:
-            raise EndToEndIntegrityError(
-                "Composition did not expose a local output before storage"
-            )
-        local_output_url = local_composition_outputs[0]
-        parsed_output = urlparse(local_output_url)
-        if parsed_output.scheme != "file":
-            raise EndToEndIntegrityError("Composition did not expose a local output")
-        generated_output = Path(unquote(parsed_output.path))
+        generated_output = temp_root / "localized-de-composed.mp4"
+        generated_output.write_bytes(composition_asset.bytes)
         stream_types = _stream_types(generated_output)
         final_duration = probe_duration(generated_output)
         if abs(final_duration - float(source.duration)) > 0.05:
@@ -1167,6 +1491,10 @@ def run_live_end_to_end(
             "language": E2E_LANGUAGE,
             "source_transcription_provider": "faster-whisper-local",
             "translation_provider": "argos-translate-offline",
+            "translation_rewrite_provider": (
+                "b2-human-approved-translation-memory"
+            ),
+            "segment_count": len(multi_outcome.segment_results),
             "human_approval_required_before_publish": True,
             "development_sample": development_sample,
         }
@@ -1177,6 +1505,31 @@ def run_live_end_to_end(
             content_type="application/json",
         )
 
+        translation_results = tuple(
+            result.translation for result in multi_outcome.segment_results
+        )
+        selected_attempts = tuple(
+            result.selected_attempt for result in multi_outcome.segment_results
+        )
+        selected_speeches = tuple(
+            result.selected_speech for result in multi_outcome.segment_results
+        )
+        first_translation = translation_results[0]
+        first_speech = selected_speeches[0]
+        band_rank = {"green": 0, "amber": 1, "red": 2}
+        worst_band = max(
+            (attempt.timing_band for attempt in selected_attempts),
+            key=lambda value: band_rank.get(value, 99),
+        )
+        if multi_outcome.red_to_green_segment_ids:
+            aggregate_action = "bounded_rewrite_regeneration"
+        elif any(
+            attempt.timing_action == "pad_silence"
+            for attempt in selected_attempts
+        ):
+            aggregate_action = "segment_silence_padding"
+        else:
+            aggregate_action = "accept"
         report = LiveEndToEndReport(
             project_id=project_id,
             job_id=job_id,
@@ -1199,23 +1552,23 @@ def run_live_end_to_end(
             detected_source_text=detected_source_text,
             translation_provider="argos-translate-offline",
             translation_model=ARGOS_MODEL,
-            translation_run_id=str(translation_checkpoint["run_id"]),
-            translation_asset_key=str(translation_checkpoint["asset_key"]),
-            translation_manifest_key=str(
-                translation_checkpoint["manifest_key"]
+            translation_run_id=first_translation.run_id,
+            translation_asset_key=first_translation.asset_key,
+            translation_manifest_key=first_translation.manifest_key,
+            translated_text=" ".join(
+                segment.text for segment in localized_transcript.segments
             ),
-            translated_text=translated_text,
             protected_terms_preserved=True,
             authorization_code=authorization_decision.code.value,
-            timing_status=str(timing_summary["status"]),
-            timing_band=str(selected_attempt["timing_band"]),
-            timing_action=str(selected_attempt["timing_action"]),
-            tts_attempt_count=len(attempts),
-            tts_generated_characters=int(
-                timing_summary["total_generated_characters"]
+            timing_status=multi_outcome.status.value,
+            timing_band=worst_band,
+            timing_action=aggregate_action,
+            tts_attempt_count=multi_outcome.total_tts_attempts,
+            tts_generated_characters=(
+                multi_outcome.total_generated_characters
             ),
-            selected_speech_key=str(speech["audio_key"]),
-            selected_speech_manifest_key=str(speech["manifest_key"]),
+            selected_speech_key=first_speech.audio_key,
+            selected_speech_manifest_key=first_speech.manifest_key,
             captions_key=captions_key,
             composition_run_id=composition_asset.run_id,
             composition_manifest_key=composition_asset.manifest_key,
@@ -1237,7 +1590,36 @@ def run_live_end_to_end(
                 if transcript_quality_decision == "human-approved"
                 else None
             ),
-            effective_source_text=source_segment.text,
+            effective_source_text=" ".join(
+                segment.text for segment in timed_transcript.segments
+            ),
+            multi_segment_summary_key=multi_segment_summary_key,
+            segment_results=tuple(
+                result.to_dict() for result in multi_outcome.segment_results
+            ),
+            translation_run_ids=tuple(
+                translation.run_id for translation in translation_results
+            ),
+            translation_asset_keys=tuple(
+                translation.asset_key for translation in translation_results
+            ),
+            translation_manifest_keys=tuple(
+                translation.manifest_key
+                for translation in translation_results
+            ),
+            selected_speech_keys=tuple(
+                speech.audio_key for speech in selected_speeches
+            ),
+            selected_speech_manifest_keys=tuple(
+                speech.manifest_key for speech in selected_speeches
+            ),
+            localized_audio_run_id=localized_audio.run_id,
+            localized_audio_asset_key=localized_audio.asset_key,
+            localized_audio_manifest_key=localized_audio.manifest_key,
+            red_to_green_segment_ids=(
+                multi_outcome.red_to_green_segment_ids
+            ),
+            resumed_segment_ids=multi_outcome.resumed_segment_ids,
         )
         put_immutable(
             storage.backend,

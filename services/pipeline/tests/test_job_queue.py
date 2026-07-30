@@ -252,6 +252,42 @@ def test_blocked_transcript_resumes_only_after_human_review() -> None:
     ) == (scope.project_id, scope.job_id)
 
 
+def test_blocked_timing_resumes_only_after_approved_revision() -> None:
+    backend = MemoryBackend()
+    payload = request_payload()
+    scope = StorageScope(
+        str(payload["project_id"]),
+        str(payload["job_id"]),
+        "de-DE",
+    )
+    keys = ToluvaObjectKeys(scope.project_id)
+    backend.objects[keys.queue_request(scope)] = json.dumps(payload).encode()
+    backend.objects[
+        keys.status_event(scope, 12, "timing-blocked")
+    ] = b"{}"
+    backend.objects[
+        keys.status_event(scope, 2, "claimed")
+    ] = b"{}"
+
+    assert (
+        find_next_runnable_job(
+            backend,  # type: ignore[arg-type]
+            now=datetime(2026, 7, 29, 12, 0, tzinfo=UTC),
+            stale_claim_seconds=90,
+        )
+        is None
+    )
+
+    backend.objects[
+        keys.translation_approved_revision(scope, "segment-002", 2)
+    ] = b"{}"
+    assert find_next_runnable_job(
+        backend,  # type: ignore[arg-type]
+        now=datetime(2026, 7, 29, 12, 0, tzinfo=UTC),
+        stale_claim_seconds=90,
+    ) == (scope.project_id, scope.job_id)
+
+
 def test_final_record_is_a_terminal_queue_marker() -> None:
     backend = MemoryBackend()
     payload = request_payload()

@@ -140,9 +140,12 @@ def build_segment_audio_command(
         )
         labels.append(f"[{label}]")
     filters.append(
-        "".join(labels)
-        + f"amix=inputs={len(labels)}:duration=longest:normalize=0,"
-        f"apad=pad_dur={target_seconds:.6f},"
+        f"anullsrc=r=48000:cl=stereo:d={target_seconds:.6f}"
+        "[source_silence]"
+    )
+    filters.append(
+        "".join((*labels, "[source_silence]"))
+        + f"amix=inputs={len(labels) + 1}:duration=longest:normalize=0,"
         f"atrim=0:{target_seconds:.6f}[localized_master]"
     )
     command.extend(

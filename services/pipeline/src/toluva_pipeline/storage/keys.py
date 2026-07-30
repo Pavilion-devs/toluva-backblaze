@@ -128,6 +128,32 @@ class ToluvaObjectKeys:
             f"{_opaque_id(version, 'version')}/genblaze"
         )
 
+    def translation_revision_request(
+        self,
+        scope: StorageScope,
+        segment_id: str,
+        attempt_number: int,
+    ) -> str:
+        self._assert_scope(scope)
+        return (
+            f"{scope.job_prefix}/translations/"
+            f"{_opaque_id(segment_id, 'segment_id')}/revision-requests/"
+            f"attempt-{self._attempt(attempt_number)}.json"
+        )
+
+    def translation_approved_revision(
+        self,
+        scope: StorageScope,
+        segment_id: str,
+        attempt_number: int,
+    ) -> str:
+        self._assert_scope(scope)
+        return (
+            f"{scope.job_prefix}/translations/"
+            f"{_opaque_id(segment_id, 'segment_id')}/approved-revisions/"
+            f"attempt-{self._attempt(attempt_number)}.json"
+        )
+
     def speech_attempt(
         self,
         scope: StorageScope,

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from enum import StrEnum
+from collections.abc import Callable
 from typing import Protocol
 
 from toluva_pipeline.domain.correction import (
@@ -147,6 +148,7 @@ class MultiSegmentLocalizationOutcome:
     total_tts_attempts: int
     total_generated_characters: int
     red_to_green_segment_ids: tuple[str, ...]
+    resumed_segment_ids: tuple[str, ...]
 
     @property
     def ready_for_composition(self) -> bool:
@@ -190,12 +192,20 @@ class MultiSegmentLocalizationEngine:
         rewriter: TranslationRewriter,
         policy: TimingPolicy | None = None,
         journal: CorrectionJournal | None = None,
+        completed_timing_loader: (
+            Callable[[str], TimingCorrectionOutcome | None] | None
+        ) = None,
+        prior_attempts_loader: (
+            Callable[[str], tuple[CorrectionAttempt, ...]] | None
+        ) = None,
     ) -> None:
         self._translator = translator
         self._generator = generator
         self._rewriter = rewriter
         self._policy = policy or TimingPolicy()
         self._journal = journal
+        self._completed_timing_loader = completed_timing_loader
+        self._prior_attempts_loader = prior_attempts_loader
 
     def run(
         self,
@@ -203,6 +213,7 @@ class MultiSegmentLocalizationEngine:
     ) -> MultiSegmentLocalizationOutcome:
         results: list[LocalizedSegmentResult] = []
         stopped_segment_id: str | None = None
+        resumed_segment_ids: list[str] = []
 
         for segment in request.transcript.segments:
             segment_terms = tuple(
@@ -220,23 +231,44 @@ class MultiSegmentLocalizationEngine:
                 translation,
                 protected_terms=segment_terms,
             )
-            correction = TimingCorrectionEngine(
-                generator=self._generator,
-                rewriter=self._rewriter,
-                policy=self._policy,
-                journal=self._journal,
-            ).run(
-                TimingCorrectionRequest(
-                    project_id=request.project_id,
-                    job_id=request.job_id,
-                    segment_id=segment.segment_id,
-                    source_text=segment.text,
-                    initial_translation=translation.translated_text,
-                    source_language=request.source_language,
-                    target_language=request.target_language,
-                    target_seconds=segment.end_seconds - segment.start_seconds,
-                    protected_terms=segment_terms,
+            correction_request = TimingCorrectionRequest(
+                project_id=request.project_id,
+                job_id=request.job_id,
+                segment_id=segment.segment_id,
+                source_text=segment.text,
+                initial_translation=translation.translated_text,
+                source_language=request.source_language,
+                target_language=request.target_language,
+                target_seconds=segment.end_seconds - segment.start_seconds,
+                protected_terms=segment_terms,
+            )
+            correction = (
+                self._completed_timing_loader(segment.segment_id)
+                if self._completed_timing_loader is not None
+                else None
+            )
+            if correction is not None:
+                resumed_segment_ids.append(segment.segment_id)
+            else:
+                prior_attempts = (
+                    self._prior_attempts_loader(segment.segment_id)
+                    if self._prior_attempts_loader is not None
+                    else ()
                 )
+                if prior_attempts:
+                    resumed_segment_ids.append(segment.segment_id)
+                correction = TimingCorrectionEngine(
+                    generator=self._generator,
+                    rewriter=self._rewriter,
+                    policy=self._policy,
+                    journal=self._journal,
+                ).run(
+                    correction_request,
+                    prior_attempts=prior_attempts,
+                )
+            self._assert_timing(
+                correction_request,
+                correction,
             )
             result = LocalizedSegmentResult(
                 source_segment=segment,
@@ -275,6 +307,7 @@ class MultiSegmentLocalizationEngine:
                 for result in results
                 if result.turned_red_to_green
             ),
+            resumed_segment_ids=tuple(resumed_segment_ids),
         )
 
     @staticmethod
@@ -309,4 +342,48 @@ class MultiSegmentLocalizationEngine:
         ):
             raise SegmentTranslationError(
                 "translation asset or manifest did not verify"
+            )
+
+    @staticmethod
+    def _assert_timing(
+        request: TimingCorrectionRequest,
+        timing: TimingCorrectionOutcome,
+    ) -> None:
+        if (
+            timing.project_id != request.project_id
+            or timing.job_id != request.job_id
+            or timing.segment_id != request.segment_id
+        ):
+            raise RuntimeError(
+                "timing correction checkpoint does not match its segment"
+            )
+        if not timing.attempts:
+            raise RuntimeError("timing correction checkpoint has no attempts")
+        if (
+            timing.attempts[0].context.translated_text
+            != request.initial_translation
+        ):
+            raise RuntimeError(
+                "timing correction checkpoint does not match translation"
+            )
+        selected = next(
+            (
+                attempt
+                for attempt in timing.attempts
+                if attempt.context.attempt_number
+                == timing.selected_attempt_number
+            ),
+            None,
+        )
+        if selected is None:
+            raise RuntimeError(
+                "timing correction checkpoint has no selected attempt"
+            )
+        if not (
+            selected.speech.stored_manifest_valid
+            and selected.speech.stored_manifest_hash_matches
+            and selected.speech.stored_asset_hash_matches
+        ):
+            raise RuntimeError(
+                "timing correction checkpoint selected unverified speech"
             )

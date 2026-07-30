@@ -13,7 +13,11 @@ from genblaze_core import FileEntry
 from genblaze_s3 import S3StorageBackend
 
 from toluva_pipeline.domain.transcript_quality import TranscriptQualityBlocked
-from toluva_pipeline.live_end_to_end import LiveEndToEndReport, run_live_end_to_end
+from toluva_pipeline.live_end_to_end import (
+    LiveEndToEndReport,
+    TimingCorrectionBlocked,
+    run_live_end_to_end,
+)
 from toluva_pipeline.settings import Settings
 from toluva_pipeline.storage.b2 import build_b2_storage
 from toluva_pipeline.storage.keys import StorageScope, ToluvaObjectKeys
@@ -40,6 +44,7 @@ STAGES: dict[str, tuple[int, str, str]] = {
     "translated": (9, "running", "Translation verified"),
     "authorized": (10, "running", "Voice authorization passed"),
     "synthesizing": (11, "running", "Generating localized speech"),
+    "timing-blocked": (12, "blocked", "Timing revision approval required"),
     "timing-qa": (12, "running", "Measuring timing drift"),
     "composing": (13, "running", "Composing final media"),
     "completed": (14, "completed", "Localization completed"),
@@ -245,7 +250,7 @@ def process_queued_job(
             version=request.version,
             on_progress=status.emit,
         )
-    except TranscriptQualityBlocked:
+    except (TranscriptQualityBlocked, TimingCorrectionBlocked):
         raise
     except Exception:
         status.emit(
@@ -301,6 +306,25 @@ def find_next_runnable_job(
             # The immutable human-review record is an explicit resume signal.
             # It supersedes the old claim's freshness so the single worker can
             # continue immediately without repeating transcription.
+            return project_id, job_id
+        timing_blocked_key = keys.status_event(
+            scope,
+            12,
+            "timing-blocked",
+        )
+        if timing_blocked_key in entries_by_key:
+            translation_prefix = f"{scope.job_prefix}/translations/"
+            has_approved_revision = any(
+                entry_key.startswith(translation_prefix)
+                and "/approved-revisions/" in entry_key
+                and entry_key.endswith(".json")
+                for entry_key in entries_by_key
+            )
+            if not has_approved_revision:
+                continue
+            # An immutable approved revision is an explicit same-job resume
+            # signal. The worker reuses prior timing attempts and parent
+            # manifests instead of repeating an ElevenLabs call.
             return project_id, job_id
         claim_entry = entries_by_key.get(
             keys.status_event(scope, 2, "claimed")

@@ -47,6 +47,16 @@ def test_timing_and_speech_prefixes_are_attempt_scoped() -> None:
     assert keys.localized_audio_genblaze_prefix(scope, "v2").endswith(
         "/localized-audio/v2/genblaze"
     )
+    assert keys.translation_revision_request(
+        scope,
+        "segment-01",
+        2,
+    ).endswith("/translations/segment-01/revision-requests/attempt-2.json")
+    assert keys.translation_approved_revision(
+        scope,
+        "segment-01",
+        2,
+    ).endswith("/translations/segment-01/approved-revisions/attempt-2.json")
     assert keys.composition_genblaze_prefix(scope, "v2").endswith(
         "/composition/v2/genblaze"
     )

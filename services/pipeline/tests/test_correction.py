@@ -7,6 +7,7 @@ from toluva_pipeline.domain.correction import (
     CorrectionAttempt,
     CorrectionStatus,
     ProtectedTermError,
+    RewriteError,
     ScriptedTranslationRewriter,
     SpeechArtifact,
     TimingCorrectionEngine,
@@ -210,3 +211,49 @@ def test_rewrite_missing_protected_term_blocks_second_tts_call() -> None:
         ).run(request())
     assert len(generator.contexts) == 1
     assert journal.rewrite_failures == [(2, "ProtectedTermError")]
+
+
+def test_correction_resumes_after_approved_rewrite_without_repeating_tts() -> None:
+    class ApprovalMissingRewriter:
+        @property
+        def name(self) -> str:
+            return "approval-missing"
+
+        def rewrite(
+            self,
+            correction_request: TimingCorrectionRequest,
+            context: AttemptContext,
+            instruction: str,
+        ) -> str:
+            raise RewriteError("approval required")
+
+    first_generator = FakeGenerator([13.0])
+    first_journal = RecordingJournal()
+    with pytest.raises(RewriteError, match="approval required"):
+        TimingCorrectionEngine(
+            generator=first_generator,
+            rewriter=ApprovalMissingRewriter(),
+            journal=first_journal,
+        ).run(request())
+
+    assert [context.attempt_number for context in first_generator.contexts] == [1]
+    assert len(first_journal.completed) == 1
+    resumed_generator = FakeGenerator([9.8])
+    resumed = TimingCorrectionEngine(
+        generator=resumed_generator,
+        rewriter=ScriptedTranslationRewriter(("Toluva passt gut.",)),
+    ).run(
+        request(),
+        prior_attempts=tuple(first_journal.completed),
+    )
+
+    assert resumed.status == CorrectionStatus.ACCEPTED
+    assert [attempt.context.attempt_number for attempt in resumed.attempts] == [
+        1,
+        2,
+    ]
+    assert [context.attempt_number for context in resumed_generator.contexts] == [2]
+    assert resumed.attempts[1].speech.parent_run_id == "run-1"
+    assert resumed.total_generated_characters == (
+        len(request().initial_translation) + len("Toluva passt gut.")
+    )

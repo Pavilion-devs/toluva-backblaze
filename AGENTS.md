@@ -136,6 +136,13 @@ The implemented correction boundary is:
   previous attempt's `parent_run_id`.
 - Translation and QA records are written before and after each billable call to
   distinct append-only B2 keys.
+- A retry translation must come from an immutable, hash-bound,
+  human-approved B2 revision. Argos is not represented as an
+  instruction-following rewriter.
+- When no approved revision exists, store the exact shortening/expansion
+  request and block before another TTS call. Resume the same job only after the
+  matching approval appears; reuse every completed attempt and rehydrate its
+  verified Genblaze parent manifest instead of repeating speech generation.
 - The current ElevenLabs adapter path uses `max_retries=0`; a provider retry
   without a supported idempotency header could double-bill. Toluva retries only
   as an explicit, measured correction attempt.
@@ -292,6 +299,8 @@ The verified fixture-free execution contract is:
 - Run source ingest, timed transcription, protected-term translation, voice
   authorization, TTS timing QA, captions, and three-input composition as
   inspectable stages.
+- Preserve every provider timed segment. Do not collapse a multi-segment
+  transcript into one translation or speech slot.
 - Keep transcription, translation, speech, and composition as four separately
   verifiable Genblaze manifests.
 - Independently re-hash the final B2 object before reporting success.

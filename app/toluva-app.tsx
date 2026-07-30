@@ -794,6 +794,28 @@ export function ToluvaApp() {
                     </button>
                   </div>
                 )}
+              {activeJob.state === "blocked" &&
+                !activeJob.transcriptReview && (
+                  <div className="transcript-review-panel">
+                    <div className="transcript-review-heading">
+                      <div>
+                        <span className="meta-label">
+                          TIMING-DRIFT GATE
+                        </span>
+                        <strong>
+                          Translation revision needs approval
+                        </strong>
+                      </div>
+                      <span>NO AUTOMATIC RETRY</span>
+                    </div>
+                    <p>
+                      Toluva preserved the measured speech attempt and stopped
+                      before another ElevenLabs call. An exact, hash-bound
+                      shorter translation must be approved before this same
+                      job can resume.
+                    </p>
+                  </div>
+                )}
               {activeJob.finalAvailable && (
                 <div className="job-output">
                   <div>

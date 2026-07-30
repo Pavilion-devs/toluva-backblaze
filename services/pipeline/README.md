@@ -176,9 +176,9 @@ and a `mov_text` subtitle stream. Its SHA-256 is
 The job now contains 14 B2 objects, with three additional source/transcript
 objects under the project. No new model credits were spent.
 
-## Multi-segment engine contract
+## Multi-segment production runtime
 
-The next engine boundary is implemented and verified without a provider call:
+The live worker boundary is implemented and verified without a provider call:
 
 - `MultiSegmentLocalizationEngine` preserves the timed transcript as individual
   source slots.
@@ -194,6 +194,21 @@ The next engine boundary is implemented and verified without a provider call:
 - Aggregate state has append-only B2 key contracts at
   `qa/multi-segment/{version}.json` and
   `localized-audio/{version}/genblaze/`.
+- The production end-to-end path no longer collapses Whisper segments. It runs
+  one checkpointed Argos stage and one bounded timing-correction state machine
+  per preserved source slot.
+- Timing rewrites come only from immutable B2 approvals bound to the exact
+  source text, current translation, instruction, target duration, protected
+  terms, segment, attempt, job, and parent run.
+- A missing approval writes a revision request and exposes `timing-blocked`
+  before another ElevenLabs call. The same job can resume after approval by
+  reloading its completed timing attempts and verified parent Genblaze
+  manifest.
+- Audio assembly and final composition have their own provider intents,
+  completions, stored assets, manifests, and independent byte verification.
+- Final records retain the legacy single-result fields for old evidence while
+  adding complete per-segment translation, speech, timing, resume,
+  red-to-green, and audio-master lineage.
 
 The deterministic proof uses three segments: a green first attempt, a
 red-to-green corrected segment, and an amber silence-padded segment. It also
@@ -207,9 +222,9 @@ services/pipeline/.venv/bin/pytest -q \
   services/pipeline/tests/test_audio_assembler.py
 ```
 
-The full service suite currently collects and passes 111 tests. The hosted
-worker remains on the proven single-segment release until the controlled
-multi-segment production source and rewrite policy are approved.
+The full service suite currently collects and passes 119 tests. This production
+wiring phase made no B2 write and no provider call. A controlled production
+source remains gated behind explicit ElevenLabs spend approval.
 
 ## Fixture-free end-to-end proof
 

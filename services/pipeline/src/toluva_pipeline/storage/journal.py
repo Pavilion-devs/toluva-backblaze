@@ -12,6 +12,8 @@ from toluva_pipeline.domain.correction import (
     CorrectionAttempt,
     TimingCorrectionOutcome,
     TimingCorrectionRequest,
+    correction_attempt_from_dict,
+    timing_correction_outcome_from_dict,
 )
 from toluva_pipeline.storage.keys import StorageScope, ToluvaObjectKeys
 
@@ -45,6 +47,53 @@ class B2CorrectionJournal:
             raise ExistingCorrectionRunError(
                 "This job and segment already have durable timing-correction state."
             )
+
+    def completed_outcome(
+        self,
+        segment_id: str,
+    ) -> TimingCorrectionOutcome | None:
+        key = self._keys.timing_summary(self._scope, segment_id)
+        if not self._backend.exists(key):
+            return None
+        payload = json.loads(self._backend.get(key))
+        outcome = timing_correction_outcome_from_dict(payload)
+        if (
+            outcome.project_id != self._scope.project_id
+            or outcome.job_id != self._scope.job_id
+            or outcome.segment_id != segment_id
+        ):
+            raise RuntimeError(
+                "Stored correction summary does not match its storage scope"
+            )
+        return outcome
+
+    def completed_attempts(
+        self,
+        segment_id: str,
+        *,
+        max_attempts: int,
+    ) -> tuple[CorrectionAttempt, ...]:
+        attempts: list[CorrectionAttempt] = []
+        for attempt_number in range(1, max_attempts + 1):
+            timing_key = self._keys.timing_attempt(
+                self._scope,
+                segment_id,
+                attempt_number,
+            )
+            if not self._backend.exists(timing_key):
+                break
+            translation_key = self._keys.translation_attempt(
+                self._scope,
+                segment_id,
+                attempt_number,
+            )
+            if not self._backend.exists(translation_key):
+                raise RuntimeError(
+                    "Timing attempt is missing its generation intent"
+                )
+            payload = json.loads(self._backend.get(timing_key))
+            attempts.append(correction_attempt_from_dict(payload))
+        return tuple(attempts)
 
     def before_generation(
         self,
