@@ -327,7 +327,7 @@ stores its root-only environment at `/etc/toluva/worker.env`. See
 `deploy/vps/README.md`.
 
 The deployed service uses the immutable tag
-`toluva-worker:queue-v3-35465e6`, built from the transcript-gate source
+`toluva-worker:queue-v3-e3634e2`, built from the transcript-gate fix source
 revision. Its container health, restart count, and heartbeat must be recorded
 in `deploy/vps/README.md` after each deployment. No reverse proxy, DNS record,
 forwarded port, or public worker endpoint is required.

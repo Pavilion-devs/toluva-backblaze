@@ -30,7 +30,7 @@ pre-existing service.
 - `toluva-worker.service` — systemd unit that owns the one container replica
 - `worker.env.example` — secret-free runtime contract
 
-The current deployment image is `toluva-worker:queue-v3-35465e6`, built from
+The current deployment image is `toluva-worker:queue-v3-e3634e2`, built from
 the repository's checked-in Dockerfile. It contains Python 3.12.13, the locked
 CPU-only Python environment, FFmpeg/FFprobe, the pinned Faster Whisper model,
 and the pinned Argos English-to-German model.
@@ -64,7 +64,7 @@ Installing or starting Toluva must not require a reboot.
 1. Install Docker from the Ubuntu package repository without upgrading or
    restarting unrelated services.
 2. Load the verified `linux/amd64` image and tag it
-   `toluva-worker:queue-v3-35465e6`.
+   `toluva-worker:queue-v3-e3634e2`.
 3. Create `/etc/toluva/worker.env` from `worker.env.example`, insert only the
    scoped B2 credential and ElevenLabs key, and set mode `0600`.
 4. Copy `toluva-worker.service` to `/etc/systemd/system/`.
