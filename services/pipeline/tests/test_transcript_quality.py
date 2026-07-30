@@ -56,6 +56,18 @@ def test_clear_transcript_passes_before_translation() -> None:
     assert review.known_confidence_count == 7
 
 
+def test_fresh_review_record_is_json_shaped_before_storage() -> None:
+    review = evaluate_transcript_quality(
+        payload(),
+        protected_terms=("Toluva",),
+    )
+    record = review.to_dict()
+    assert record["reason_codes"] == []
+    assert isinstance(record["reason_codes"], list)
+    assert record["protected_terms"] == ["Toluva"]
+    assert isinstance(record["protected_terms"], list)
+
+
 def test_real_trailing_hallucination_requires_review() -> None:
     review = evaluate_transcript_quality(
         payload(

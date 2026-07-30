@@ -1084,6 +1084,13 @@ Controlled production handshake completed on July 30:
   `suspicious_trailing_fragment`, mean confidence `0.6908042778571447`, and
   trailing evidence `Languages which is...`. The deployment created no job and
   made no Whisper, Argos, or ElevenLabs call.
+- The first controlled queue-v3 proof stored a correct `review_required` QA
+  record but then stopped safely because the freshly computed in-memory
+  `reason_codes` value was a tuple while the replayed JSON value is a list.
+  The integrity check correctly failed closed before translation or TTS, and
+  the immutable failed job remains evidence of the defect. Normalize the fresh
+  record to its JSON shape, cover the boundary with a regression test, then use
+  a new job for the visible blocked-state proof rather than rewriting history.
 
 ## 16. Delivery Schedule
 

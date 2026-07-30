@@ -92,6 +92,10 @@ class TranscriptQualityReview:
 
     def to_dict(self) -> dict[str, object]:
         payload = asdict(self)
+        # The fresh in-memory record must have the same JSON-shaped types as
+        # the immutable record loaded on replay.
+        payload["reason_codes"] = list(self.reason_codes)
+        payload["protected_terms"] = list(self.protected_terms)
         payload["requires_human_review"] = self.requires_human_review
         payload["policy_version"] = POLICY_VERSION
         return payload
