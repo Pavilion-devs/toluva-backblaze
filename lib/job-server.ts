@@ -16,11 +16,14 @@ import {
   finalRecordKey,
   isIntakeProjectId,
   isLocalizationJobId,
+  isSegmentId,
   jobPrefix,
   queueRequestKey,
   statusPrefix,
   transcriptHumanReviewKey,
   transcriptQualityKey,
+  translationApprovedRevisionKey,
+  translationRevisionRequestKey,
   type JobEvent,
   type QueueRequest,
 } from "./job-contract";
@@ -67,6 +70,68 @@ export type TranscriptReviewView = {
   trailingText: string;
 };
 
+type TranslationRevisionRequestRecord = {
+  attempt_number: number;
+  current_translation: string;
+  current_translation_sha256: string;
+  instruction: string;
+  instruction_sha256: string;
+  job_id: string;
+  parent_run_id: string;
+  project_id: string;
+  protected_terms: string[];
+  record_type: "translation_revision_request";
+  requested_action: string;
+  schema_version: "1.0";
+  segment_id: string;
+  source_language: string;
+  source_text_sha256: string;
+  target_language: string;
+  target_seconds: number;
+};
+
+type ApprovedTranslationRevisionRecord = {
+  approved_at: string;
+  approved_by: string;
+  attempt_number: number;
+  current_translation_sha256: string;
+  decision: "approved";
+  instruction_sha256: string;
+  job_id: string;
+  project_id: string;
+  protected_terms: string[];
+  record_type: "approved_translation_revision";
+  request_binding_sha256: string;
+  revised_text: string;
+  revised_text_sha256: string;
+  schema_version: "1.0";
+  segment_id: string;
+  source_text_sha256: string;
+  target_seconds: number;
+};
+
+export type TimingReviewView = {
+  attemptNumber: number;
+  currentTranslation: string;
+  instruction: string;
+  protectedTerms: string[];
+  requestedAction: string;
+  segmentId: string;
+  targetSeconds: number;
+};
+
+type TimingRevisionContext = {
+  approvalKey: string;
+  approvalExists: boolean;
+  request: TranslationRevisionRequestRecord;
+  requestKey: string;
+  view: TimingReviewView;
+};
+
+const REVISION_REQUEST_SUFFIX =
+  /^([A-Za-z0-9][A-Za-z0-9_-]{0,127})\/revision-requests\/attempt-([1-9][0-9]*)\.json$/;
+const SHA256 = /^[a-f0-9]{64}$/;
+
 function compactUuid(prefix: string): string {
   return `${prefix}-${crypto.randomUUID().replaceAll("-", "")}`;
 }
@@ -75,6 +140,15 @@ function hex(buffer: ArrayBuffer): string {
   return Array.from(new Uint8Array(buffer), (byte) =>
     byte.toString(16).padStart(2, "0"),
   ).join("");
+}
+
+async function sha256Text(value: string): Promise<string> {
+  return hex(
+    await crypto.subtle.digest(
+      "SHA-256",
+      new TextEncoder().encode(value),
+    ),
+  );
 }
 
 function safeFilename(value: string): string {
@@ -208,6 +282,7 @@ export async function readJobStatus(
     | "target_language"
   >;
   state: JobEvent["state"];
+  timingReview?: TimingReviewView;
   transcriptReview?: TranscriptReviewView;
 }> {
   const prefix = jobPrefix(projectId, jobId);
@@ -222,21 +297,33 @@ export async function readJobStatus(
   const eventFiles = files
     .filter((file) => file.fileName.endsWith(".json"))
     .sort((left, right) => left.fileName.localeCompare(right.fileName));
-  const events = await Promise.all(
-    eventFiles.map((file) => getB2ProjectJson<JobEvent>(file.fileName)),
+  const eventRecords = await Promise.all(
+    eventFiles.map(async (file) => ({
+      event: await getB2ProjectJson<JobEvent>(file.fileName),
+      fileName: file.fileName,
+      uploadTimestamp: file.uploadTimestamp,
+    })),
   );
-  const validEvents = events
+  const validEventRecords = eventRecords
     .filter(
-      (event) =>
+      ({ event }) =>
         event.record_type === "job_status_event" &&
         event.project_id === projectId &&
         event.job_id === jobId,
     )
-    .sort((left, right) => left.sequence - right.sequence);
-  if (validEvents.length === 0) throw new Error("job_status_missing");
-  const currentEvent = validEvents.at(-1)!;
+    .sort(
+      (left, right) =>
+        left.uploadTimestamp - right.uploadTimestamp ||
+        left.fileName.localeCompare(right.fileName),
+    );
+  if (validEventRecords.length === 0) {
+    throw new Error("job_status_missing");
+  }
+  const validEvents = validEventRecords.map(({ event }) => event);
+  const currentEvent = validEventRecords.at(-1)!.event;
   const currentState = currentEvent.state;
   let transcriptReview: TranscriptReviewView | undefined;
+  let timingReview: TimingReviewView | undefined;
   if (
     currentState === "blocked" &&
     currentEvent.stage === "transcript-blocked"
@@ -259,6 +346,16 @@ export async function readJobStatus(
       reasonCodes: quality.reason_codes,
       trailingText: quality.trailing_text,
     };
+  } else if (
+    currentState === "blocked" &&
+    currentEvent.stage === "timing-blocked"
+  ) {
+    const context = await loadOutstandingTimingRevision(
+      projectId,
+      jobId,
+      request,
+    );
+    timingReview = context.view;
   }
 
   const finalFiles = await listB2ProjectFiles(
@@ -280,8 +377,224 @@ export async function readJobStatus(
       target_language: request.target_language,
     },
     state: currentState,
+    ...(timingReview ? { timingReview } : {}),
     ...(transcriptReview ? { transcriptReview } : {}),
   };
+}
+
+function timingRevisionPrefix(
+  projectId: string,
+  jobId: string,
+): string {
+  return `${jobPrefix(projectId, jobId)}/translations/`;
+}
+
+async function validateTranslationRevisionRequest(
+  request: TranslationRevisionRequestRecord,
+  expected: {
+    attemptNumber: number;
+    jobId: string;
+    projectId: string;
+    protectedTerms: string[];
+    segmentId: string;
+  },
+): Promise<void> {
+  if (
+    request.record_type !== "translation_revision_request" ||
+    request.schema_version !== "1.0" ||
+    request.project_id !== expected.projectId ||
+    request.job_id !== expected.jobId ||
+    request.segment_id !== expected.segmentId ||
+    request.attempt_number !== expected.attemptNumber ||
+    !isSegmentId(request.segment_id) ||
+    !Number.isSafeInteger(request.attempt_number) ||
+    request.attempt_number < 1 ||
+    typeof request.current_translation !== "string" ||
+    request.current_translation.trim().length < 1 ||
+    request.current_translation.length > 2000 ||
+    typeof request.instruction !== "string" ||
+    request.instruction.trim().length < 1 ||
+    request.instruction.length > 1000 ||
+    typeof request.requested_action !== "string" ||
+    !["retry_shorter", "retry_longer"].includes(
+      request.requested_action,
+    ) ||
+    typeof request.parent_run_id !== "string" ||
+    request.parent_run_id.length < 1 ||
+    request.parent_run_id.length > 200 ||
+    request.source_language !== "English" ||
+    request.target_language !== "German" ||
+    !SHA256.test(request.source_text_sha256) ||
+    !SHA256.test(request.current_translation_sha256) ||
+    !SHA256.test(request.instruction_sha256) ||
+    !Number.isFinite(request.target_seconds) ||
+    request.target_seconds <= 0 ||
+    request.target_seconds > MAX_CLIP_SECONDS ||
+    !Array.isArray(request.protected_terms) ||
+    request.protected_terms.length !== expected.protectedTerms.length ||
+    request.protected_terms.some(
+      (term, index) =>
+        term !== expected.protectedTerms[index] ||
+        typeof term !== "string" ||
+        term.length < 1 ||
+        term.length > 100,
+    )
+  ) {
+    throw new Error("timing_revision_request_scope_mismatch");
+  }
+  const [translationSha256, instructionSha256] = await Promise.all([
+    sha256Text(request.current_translation),
+    sha256Text(request.instruction),
+  ]);
+  if (
+    translationSha256 !== request.current_translation_sha256 ||
+    instructionSha256 !== request.instruction_sha256
+  ) {
+    throw new Error("timing_revision_request_hash_mismatch");
+  }
+}
+
+async function listTimingRevisionContexts(
+  projectId: string,
+  jobId: string,
+  queueRequest: QueueRequest,
+): Promise<TimingRevisionContext[]> {
+  const prefix = timingRevisionPrefix(projectId, jobId);
+  const files = await listB2ProjectFiles(prefix);
+  const names = new Set(files.map(({ fileName }) => fileName));
+  const handles = files
+    .map(({ fileName }) => {
+      if (!fileName.startsWith(prefix)) return null;
+      const match = REVISION_REQUEST_SUFFIX.exec(
+        fileName.slice(prefix.length),
+      );
+      if (!match) return null;
+      return {
+        attemptNumber: Number(match[2]),
+        fileName,
+        segmentId: match[1],
+      };
+    })
+    .filter(
+      (
+        handle,
+      ): handle is {
+        attemptNumber: number;
+        fileName: string;
+        segmentId: string;
+      } => handle !== null,
+    )
+    .sort(
+      (left, right) =>
+        left.attemptNumber - right.attemptNumber ||
+        left.segmentId.localeCompare(right.segmentId),
+    );
+  const contexts: TimingRevisionContext[] = [];
+  for (const handle of handles) {
+    const expectedRequestKey = translationRevisionRequestKey(
+      projectId,
+      jobId,
+      handle.segmentId,
+      handle.attemptNumber,
+    );
+    if (handle.fileName !== expectedRequestKey) {
+      throw new Error("timing_revision_request_key_mismatch");
+    }
+    const request =
+      await getB2ProjectJson<TranslationRevisionRequestRecord>(
+        expectedRequestKey,
+      );
+    await validateTranslationRevisionRequest(request, {
+      attemptNumber: handle.attemptNumber,
+      jobId,
+      projectId,
+      protectedTerms: queueRequest.protected_terms,
+      segmentId: handle.segmentId,
+    });
+    const approvalKey = translationApprovedRevisionKey(
+      projectId,
+      jobId,
+      handle.segmentId,
+      handle.attemptNumber,
+    );
+    contexts.push({
+      approvalExists: names.has(approvalKey),
+      approvalKey,
+      request,
+      requestKey: expectedRequestKey,
+      view: {
+        attemptNumber: request.attempt_number,
+        currentTranslation: request.current_translation,
+        instruction: request.instruction,
+        protectedTerms: [...request.protected_terms],
+        requestedAction: request.requested_action,
+        segmentId: request.segment_id,
+        targetSeconds: request.target_seconds,
+      },
+    });
+  }
+  return contexts;
+}
+
+async function loadOutstandingTimingRevision(
+  projectId: string,
+  jobId: string,
+  queueRequest: QueueRequest,
+): Promise<TimingRevisionContext> {
+  const contexts = await listTimingRevisionContexts(
+    projectId,
+    jobId,
+    queueRequest,
+  );
+  const outstanding = contexts.filter(
+    ({ approvalExists }) => !approvalExists,
+  );
+  if (outstanding.length !== 1) {
+    throw new Error(
+      outstanding.length === 0
+        ? "timing_revision_request_missing"
+        : "timing_revision_requests_ambiguous",
+    );
+  }
+  return outstanding[0];
+}
+
+async function revisionRequestBindingSha256(
+  request: TranslationRevisionRequestRecord,
+): Promise<string> {
+  const [
+    requestedActionHash,
+    parentRunHash,
+    sourceLanguageHash,
+    targetLanguageHash,
+    ...protectedTermHashes
+  ] = await Promise.all(
+    [
+      request.requested_action,
+      request.parent_run_id,
+      request.source_language,
+      request.target_language,
+      ...request.protected_terms,
+    ].map(sha256Text),
+  );
+  return sha256Text(
+    [
+      "translation-revision-request/v1",
+      request.project_id,
+      request.job_id,
+      request.segment_id,
+      String(request.attempt_number),
+      request.source_text_sha256,
+      request.current_translation_sha256,
+      request.instruction_sha256,
+      request.target_seconds.toFixed(6),
+      requestedActionHash,
+      parentRunHash,
+      sourceLanguageHash,
+      targetLanguageHash,
+      ...protectedTermHashes,
+    ].join("\0"),
+  );
 }
 
 function normalizedTranscriptCorrection(value: unknown): string {
@@ -424,6 +737,226 @@ export async function approveTranscriptCorrection(input: {
   await uploader.putJson(
     approvedStatusKey,
     transcriptApprovedEvent(projectId, jobId, createdAt),
+  );
+  return readJobStatus(projectId, jobId);
+}
+
+function normalizedTimingRevision(
+  value: unknown,
+  request: TranslationRevisionRequestRecord,
+): string {
+  if (typeof value !== "string") {
+    throw new Error("timing_revision_required");
+  }
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (normalized.length < 1 || normalized.length > 2000) {
+    throw new Error("timing_revision_size_invalid");
+  }
+  if (normalized === request.current_translation.trim()) {
+    throw new Error("timing_revision_must_change");
+  }
+  if (
+    request.protected_terms.some((term) => !normalized.includes(term))
+  ) {
+    throw new Error("timing_revision_lost_protected_term");
+  }
+  return normalized;
+}
+
+function timingApprovedEvent(
+  projectId: string,
+  jobId: string,
+  segmentId: string,
+  attemptNumber: number,
+  createdAt: string,
+): JobEvent {
+  return {
+    created_at: createdAt,
+    job_id: jobId,
+    label: "Timing revision approved",
+    message:
+      `The exact wording for ${segmentId}, attempt ${attemptNumber} ` +
+      "is hash-bound and ready for same-job resume.",
+    project_id: projectId,
+    record_type: "job_status_event",
+    schema_version: "1.0",
+    sequence: 13,
+    stage: "timing-approved",
+    state: "running",
+  };
+}
+
+function timingApprovedStatusKey(
+  projectId: string,
+  jobId: string,
+  segmentId: string,
+  attemptNumber: number,
+): string {
+  return (
+    `${statusPrefix(projectId, jobId)}13-timing-approved-` +
+    `${segmentId}-attempt-${attemptNumber}.json`
+  );
+}
+
+function matchingApproval(
+  approval: ApprovedTranslationRevisionRecord,
+  expected: ApprovedTranslationRevisionRecord,
+): boolean {
+  return (
+    approval.record_type === expected.record_type &&
+    approval.schema_version === expected.schema_version &&
+    approval.decision === expected.decision &&
+    approval.project_id === expected.project_id &&
+    approval.job_id === expected.job_id &&
+    approval.segment_id === expected.segment_id &&
+    approval.attempt_number === expected.attempt_number &&
+    approval.request_binding_sha256 ===
+      expected.request_binding_sha256 &&
+    approval.source_text_sha256 === expected.source_text_sha256 &&
+    approval.current_translation_sha256 ===
+      expected.current_translation_sha256 &&
+    approval.instruction_sha256 === expected.instruction_sha256 &&
+    approval.target_seconds === expected.target_seconds &&
+    JSON.stringify(approval.protected_terms) ===
+      JSON.stringify(expected.protected_terms) &&
+    approval.revised_text === expected.revised_text &&
+    approval.revised_text_sha256 === expected.revised_text_sha256
+  );
+}
+
+async function buildTimingApproval(
+  context: TimingRevisionContext,
+  revisedText: string,
+  approvedAt: string,
+): Promise<ApprovedTranslationRevisionRecord> {
+  const [bindingSha256, revisedTextSha256] = await Promise.all([
+    revisionRequestBindingSha256(context.request),
+    sha256Text(revisedText),
+  ]);
+  return {
+    approved_at: approvedAt,
+    approved_by: "authenticated-toluva-operator",
+    attempt_number: context.request.attempt_number,
+    current_translation_sha256:
+      context.request.current_translation_sha256,
+    decision: "approved",
+    instruction_sha256: context.request.instruction_sha256,
+    job_id: context.request.job_id,
+    project_id: context.request.project_id,
+    protected_terms: [...context.request.protected_terms],
+    record_type: "approved_translation_revision",
+    request_binding_sha256: bindingSha256,
+    revised_text: revisedText,
+    revised_text_sha256: revisedTextSha256,
+    schema_version: "1.0",
+    segment_id: context.request.segment_id,
+    source_text_sha256: context.request.source_text_sha256,
+    target_seconds: context.request.target_seconds,
+  };
+}
+
+export async function approveTimingRevision(input: {
+  jobId?: unknown;
+  projectId?: unknown;
+  revisedText?: unknown;
+}) {
+  const projectId =
+    typeof input.projectId === "string" ? input.projectId : "";
+  const jobId = typeof input.jobId === "string" ? input.jobId : "";
+  if (
+    !isIntakeProjectId(projectId) ||
+    !isLocalizationJobId(jobId)
+  ) {
+    throw new Error("invalid_job_handle");
+  }
+  const queueRequest = await getB2ProjectJson<QueueRequest>(
+    queueRequestKey(projectId, jobId),
+  );
+  if (
+    queueRequest.project_id !== projectId ||
+    queueRequest.job_id !== jobId
+  ) {
+    throw new Error("job_request_handle_mismatch");
+  }
+  const contexts = await listTimingRevisionContexts(
+    projectId,
+    jobId,
+    queueRequest,
+  );
+  if (contexts.length === 0) {
+    throw new Error("timing_revision_request_missing");
+  }
+  const outstanding = contexts.filter(
+    ({ approvalExists }) => !approvalExists,
+  );
+  if (outstanding.length > 1) {
+    throw new Error("timing_revision_requests_ambiguous");
+  }
+  const context = outstanding[0] ?? contexts.at(-1)!;
+  const revisedText = normalizedTimingRevision(
+    input.revisedText,
+    context.request,
+  );
+  const createdAt = new Date().toISOString();
+  const approval = await buildTimingApproval(
+    context,
+    revisedText,
+    createdAt,
+  );
+  const statusKey = timingApprovedStatusKey(
+    projectId,
+    jobId,
+    context.request.segment_id,
+    context.request.attempt_number,
+  );
+  const statusFiles = await listB2ProjectFiles(
+    statusPrefix(projectId, jobId),
+  );
+
+  if (outstanding.length === 0) {
+    const existing =
+      await getB2ProjectJson<ApprovedTranslationRevisionRecord>(
+        context.approvalKey,
+      );
+    if (!matchingApproval(existing, approval)) {
+      throw new Error("timing_revision_conflict");
+    }
+    if (!statusFiles.some(({ fileName }) => fileName === statusKey)) {
+      const uploader = await createB2ProjectUploader();
+      await uploader.putJson(
+        statusKey,
+        timingApprovedEvent(
+          projectId,
+          jobId,
+          context.request.segment_id,
+          context.request.attempt_number,
+          createdAt,
+        ),
+      );
+    }
+    return readJobStatus(projectId, jobId);
+  }
+
+  const current = await readJobStatus(projectId, jobId);
+  if (
+    current.state !== "blocked" ||
+    current.timingReview?.segmentId !== context.request.segment_id ||
+    current.timingReview.attemptNumber !==
+      context.request.attempt_number
+  ) {
+    throw new Error("timing_revision_not_blocked");
+  }
+  const uploader = await createB2ProjectUploader();
+  await uploader.putJson(context.approvalKey, approval);
+  await uploader.putJson(
+    statusKey,
+    timingApprovedEvent(
+      projectId,
+      jobId,
+      context.request.segment_id,
+      context.request.attempt_number,
+      createdAt,
+    ),
   );
   return readJobStatus(projectId, jobId);
 }

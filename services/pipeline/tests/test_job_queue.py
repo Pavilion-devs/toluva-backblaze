@@ -154,6 +154,49 @@ def test_status_writer_exposes_transcript_review_states() -> None:
     assert blocked["label"] == "Transcript review required"
 
 
+def test_status_writer_records_each_timing_block_round_separately() -> None:
+    backend = MemoryBackend()
+    scope = StorageScope(
+        f"intake-{'a' * 32}",
+        f"localize-{'b' * 32}",
+        "de-DE",
+    )
+    keys = ToluvaObjectKeys(scope.project_id)
+    writer = JobStatusWriter(
+        backend,  # type: ignore[arg-type]
+        scope=scope,
+        keys=keys,
+        clock=lambda: datetime(2026, 7, 30, 12, 0, tzinfo=UTC),
+    )
+    first_request = keys.translation_revision_request(
+        scope,
+        "segment-002",
+        2,
+    )
+    backend.objects[first_request] = b"{}"
+    writer.emit("timing-blocked", "First revision required.")
+    backend.objects[
+        keys.translation_approved_revision(scope, "segment-002", 2)
+    ] = b"{}"
+    second_request = keys.translation_revision_request(
+        scope,
+        "segment-002",
+        3,
+    )
+    backend.objects[second_request] = b"{}"
+    writer.emit("timing-blocked", "Second revision required.")
+
+    status_keys = sorted(
+        key
+        for key in backend.objects
+        if "/status/12-timing-blocked-" in key
+    )
+    assert len(status_keys) == 2
+    assert status_keys[0].endswith("segment-002-attempt-2.json")
+    assert status_keys[1].endswith("segment-002-attempt-3.json")
+    assert json.loads(backend.objects[status_keys[1]])["state"] == "blocked"
+
+
 def test_stale_claim_is_recovered_but_recent_claim_is_not() -> None:
     backend = MemoryBackend()
     payload = request_payload()
@@ -263,10 +306,10 @@ def test_blocked_timing_resumes_only_after_approved_revision() -> None:
     keys = ToluvaObjectKeys(scope.project_id)
     backend.objects[keys.queue_request(scope)] = json.dumps(payload).encode()
     backend.objects[
-        keys.status_event(scope, 12, "timing-blocked")
+        keys.status_event(scope, 2, "claimed")
     ] = b"{}"
     backend.objects[
-        keys.status_event(scope, 2, "claimed")
+        keys.translation_revision_request(scope, "segment-002", 2)
     ] = b"{}"
 
     assert (
@@ -280,6 +323,26 @@ def test_blocked_timing_resumes_only_after_approved_revision() -> None:
 
     backend.objects[
         keys.translation_approved_revision(scope, "segment-002", 2)
+    ] = b"{}"
+    assert find_next_runnable_job(
+        backend,  # type: ignore[arg-type]
+        now=datetime(2026, 7, 29, 12, 0, tzinfo=UTC),
+        stale_claim_seconds=90,
+    ) == (scope.project_id, scope.job_id)
+
+    backend.objects[
+        keys.translation_revision_request(scope, "segment-002", 3)
+    ] = b"{}"
+    assert (
+        find_next_runnable_job(
+            backend,  # type: ignore[arg-type]
+            now=datetime(2026, 7, 29, 12, 0, tzinfo=UTC),
+            stale_claim_seconds=90,
+        )
+        is None
+    )
+    backend.objects[
+        keys.translation_approved_revision(scope, "segment-002", 3)
     ] = b"{}"
     assert find_next_runnable_job(
         backend,  # type: ignore[arg-type]

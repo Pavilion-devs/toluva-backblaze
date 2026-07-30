@@ -116,6 +116,24 @@ test("rejects malformed transcript approvals before a B2 write", async () => {
   });
 });
 
+test("rejects malformed timing approvals before a B2 write", async () => {
+  const response = await render("/api/timing-review", {
+    body: JSON.stringify({
+      jobId: "not-a-job",
+      projectId: "../../private",
+      revisedText: "Toluva bleibt im Takt.",
+    }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), {
+    error: "invalid_job_handle",
+    message: "The wording did not meet the timing-review contract.",
+    ok: false,
+  });
+});
+
 test("rejects malformed completed-job media requests", async () => {
   const response = await render(
     "/api/job-media?project=bad&job=bad&kind=private",

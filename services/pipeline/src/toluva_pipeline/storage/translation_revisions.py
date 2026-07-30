@@ -43,6 +43,42 @@ def _sha256_text(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
+def revision_request_binding_sha256(
+    request_record: object,
+) -> str:
+    """Return a language-neutral binding for one exact revision request."""
+
+    if not isinstance(request_record, dict):
+        raise ValueError("translation revision request must be a JSON object")
+    protected_terms = tuple(
+        str(value) for value in request_record.get("protected_terms", ())
+    )
+    try:
+        target_seconds = float(request_record["target_seconds"])
+        attempt_number = int(request_record["attempt_number"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError(
+            "translation revision request has invalid binding fields"
+        ) from exc
+    fields = (
+        "translation-revision-request/v1",
+        str(request_record.get("project_id", "")),
+        str(request_record.get("job_id", "")),
+        str(request_record.get("segment_id", "")),
+        str(attempt_number),
+        str(request_record.get("source_text_sha256", "")),
+        str(request_record.get("current_translation_sha256", "")),
+        str(request_record.get("instruction_sha256", "")),
+        f"{target_seconds:.6f}",
+        _sha256_text(str(request_record.get("requested_action", ""))),
+        _sha256_text(str(request_record.get("parent_run_id", ""))),
+        _sha256_text(str(request_record.get("source_language", ""))),
+        _sha256_text(str(request_record.get("target_language", ""))),
+        *(_sha256_text(term) for term in protected_terms),
+    )
+    return _sha256_text("\0".join(fields))
+
+
 def build_approved_revision_record(
     request_record: object,
     *,
@@ -82,8 +118,8 @@ def build_approved_revision_record(
         "job_id": request_record["job_id"],
         "segment_id": request_record["segment_id"],
         "attempt_number": request_record["attempt_number"],
-        "request_sha256": _sha256_text(
-            json.dumps(request_record, sort_keys=True, separators=(",", ":"))
+        "request_binding_sha256": revision_request_binding_sha256(
+            request_record
         ),
         "source_text_sha256": request_record["source_text_sha256"],
         "current_translation_sha256": request_record[
@@ -209,18 +245,19 @@ class B2ApprovedTranslationRewriter:
     ) -> None:
         if not isinstance(approval, dict):
             raise RewriteError("approved translation revision is malformed")
-        expected_request_sha256 = _sha256_text(
-            json.dumps(request_record, sort_keys=True, separators=(",", ":"))
+        expected_request_binding = revision_request_binding_sha256(
+            request_record
         )
         revised_text = str(approval.get("revised_text", "")).strip()
         required_matches = {
+            "schema_version": "1.0",
             "record_type": "approved_translation_revision",
             "decision": "approved",
             "project_id": request.project_id,
             "job_id": request.job_id,
             "segment_id": request.segment_id,
             "attempt_number": context.attempt_number,
-            "request_sha256": expected_request_sha256,
+            "request_binding_sha256": expected_request_binding,
             "source_text_sha256": _sha256_text(request.source_text),
             "current_translation_sha256": context.text_sha256,
             "instruction_sha256": _sha256_text(
@@ -231,6 +268,22 @@ class B2ApprovedTranslationRewriter:
         if any(approval.get(key) != value for key, value in required_matches.items()):
             raise RewriteError(
                 "approved translation revision does not match its request"
+            )
+        if not str(approval.get("approved_by", "")).strip():
+            raise RewriteError(
+                "approved translation revision has no operator identity"
+            )
+        try:
+            approved_at = datetime.fromisoformat(
+                str(approval.get("approved_at", ""))
+            )
+        except ValueError as exc:
+            raise RewriteError(
+                "approved translation revision has an invalid timestamp"
+            ) from exc
+        if approved_at.tzinfo is None:
+            raise RewriteError(
+                "approved translation revision timestamp has no timezone"
             )
         if float(approval.get("target_seconds", 0)) != request.target_seconds:
             raise RewriteError(

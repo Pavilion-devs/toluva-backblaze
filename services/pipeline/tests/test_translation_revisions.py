@@ -13,6 +13,7 @@ from toluva_pipeline.storage.translation_revisions import (
     B2ApprovedTranslationRewriter,
     RewriteApprovalRequired,
     build_approved_revision_record,
+    revision_request_binding_sha256,
 )
 
 
@@ -113,6 +114,30 @@ def test_exact_hash_bound_approval_is_replayed_without_mutating_request() -> Non
         == "Toluva bleibt im Takt."
     )
     assert len(backend.objects) == 2
+
+
+def test_revision_request_binding_is_stable_for_unicode_text() -> None:
+    request_record = {
+        "record_type": "translation_revision_request",
+        "project_id": "project-01",
+        "job_id": "job-01",
+        "segment_id": "segment-002",
+        "attempt_number": 2,
+        "source_text_sha256": "a" * 64,
+        "current_translation_sha256": "b" * 64,
+        "instruction_sha256": "c" * 64,
+        "target_seconds": 2.0,
+        "requested_action": "retry_shorter",
+        "parent_run_id": "run-001",
+        "source_language": "English",
+        "target_language": "German",
+        "protected_terms": ["Toluva", "Stimme"],
+        "current_translation": "Toluva hält die Stimme im Takt.",
+    }
+
+    assert revision_request_binding_sha256(request_record) == (
+        "67a45f5c7577bee8e1dba81390570b2e3b7846f729b9d4d475ac5e4ceb8969bf"
+    )
 
 
 def test_mismatched_or_term_losing_approval_is_rejected() -> None:

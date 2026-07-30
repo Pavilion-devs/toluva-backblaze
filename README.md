@@ -65,7 +65,7 @@ Genblaze, and stores verified media and provenance in B2.
 - Source/final playback with WebVTT captions, completed-job replay from B2,
   and an honest verified-snapshot fallback when the live read is unavailable
 - A FastAPI boundary for health, authorization, timing, and local spike runs
-- A governed 1–8 second MP4 intake that writes source, source record, immutable
+- A governed 1–30 second MP4 intake that writes source, source record, immutable
   queue request, and first status event directly to Backblaze B2
 - A B2 queue consumer that validates the uploaded source hash, runs the real
   Genblaze engine, and appends visible progress or review-blocked stages

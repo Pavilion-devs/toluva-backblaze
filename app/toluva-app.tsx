@@ -35,12 +35,28 @@ type TranscriptReviewState =
   | "recorded"
   | "error";
 
+type TimingReviewState =
+  | "idle"
+  | "submitting"
+  | "recorded"
+  | "error";
+
 type TranscriptReview = {
   detectedText: string;
   languageProbability: number | null;
   meanWordConfidence: number | null;
   reasonCodes: string[];
   trailingText: string;
+};
+
+type TimingReview = {
+  attemptNumber: number;
+  currentTranslation: string;
+  instruction: string;
+  protectedTerms: string[];
+  requestedAction: string;
+  segmentId: string;
+  targetSeconds: number;
 };
 
 type ActiveJob = {
@@ -56,6 +72,7 @@ type ActiveJob = {
   };
   state: JobState;
   statusUrl: string;
+  timingReview?: TimingReview;
   transcriptReview?: TranscriptReview;
 };
 
@@ -215,10 +232,26 @@ export function ToluvaApp() {
     useState<TranscriptReviewState>("idle");
   const [transcriptReviewError, setTranscriptReviewError] =
     useState<string | null>(null);
+  const [revisedTranslation, setRevisedTranslation] = useState<{
+    handle: string;
+    value: string;
+  } | null>(null);
+  const [timingReviewState, setTimingReviewState] =
+    useState<TimingReviewState>("idle");
+  const [timingReviewError, setTimingReviewError] =
+    useState<string | null>(null);
   const transcriptCorrectionValue =
     correctedTranscript ||
     activeJob?.transcriptReview?.detectedText ||
     "";
+  const timingReviewHandle = activeJob?.timingReview
+    ? `${activeJob.timingReview.segmentId}:` +
+      activeJob.timingReview.attemptNumber
+    : null;
+  const timingRevisionValue =
+    revisedTranslation?.handle === timingReviewHandle
+      ? revisedTranslation.value
+      : activeJob?.timingReview?.currentTranslation || "";
 
   const refreshRun = useCallback(async () => {
     setConnection("checking");
@@ -447,6 +480,9 @@ export function ToluvaApp() {
       setCorrectedTranscript("");
       setTranscriptReviewState("idle");
       setTranscriptReviewError(null);
+      setRevisedTranslation(null);
+      setTimingReviewState("idle");
+      setTimingReviewError(null);
       setActiveJob(active);
       window.sessionStorage.setItem(
         ACTIVE_JOB_STORAGE_KEY,
@@ -495,6 +531,7 @@ export function ToluvaApp() {
         ...payload.job,
         statusUrl: activeJob.statusUrl,
       });
+      setRevisedTranslation(null);
       setTranscriptReviewState("recorded");
       setNotice(
         "Transcript correction is immutable in B2. The worker can now resume without repeating transcription.",
@@ -505,6 +542,47 @@ export function ToluvaApp() {
         error instanceof Error
           ? error.message
           : "The transcript review could not be recorded.",
+      );
+    }
+  }
+
+  async function approveTiming() {
+    if (!activeJob?.timingReview) return;
+    setTimingReviewState("submitting");
+    setTimingReviewError(null);
+    try {
+      const response = await fetch("/api/timing-review", {
+        body: JSON.stringify({
+          jobId: activeJob.jobId,
+          projectId: activeJob.projectId,
+          revisedText: timingRevisionValue,
+        }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const payload = (await response.json()) as {
+        job?: Omit<ActiveJob, "statusUrl">;
+        message?: string;
+        ok?: boolean;
+      };
+      if (!response.ok || !payload.ok || !payload.job) {
+        throw new Error(payload.message ?? "timing_review_failed");
+      }
+      setActiveJob({
+        ...payload.job,
+        statusUrl: activeJob.statusUrl,
+      });
+      setRevisedTranslation(null);
+      setTimingReviewState("recorded");
+      setNotice(
+        "The exact wording is immutable in B2. The same job can now resume from its measured speech checkpoint.",
+      );
+    } catch (error) {
+      setTimingReviewState("error");
+      setTimingReviewError(
+        error instanceof Error
+          ? error.message
+          : "The timing review could not be recorded.",
       );
     }
   }
@@ -689,7 +767,12 @@ export function ToluvaApp() {
               </div>
               <div className="job-event-track">
                 {activeJob.events.map((event) => (
-                  <article key={`${event.sequence}-${event.stage}`}>
+                  <article
+                    key={
+                      `${event.sequence}-${event.stage}-` +
+                      event.created_at
+                    }
+                  >
                     <span>{String(event.sequence).padStart(2, "0")}</span>
                     <div>
                       <strong>{event.label}</strong>
@@ -795,7 +878,7 @@ export function ToluvaApp() {
                   </div>
                 )}
               {activeJob.state === "blocked" &&
-                !activeJob.transcriptReview && (
+                activeJob.timingReview && (
                   <div className="transcript-review-panel">
                     <div className="transcript-review-heading">
                       <div>
@@ -806,13 +889,95 @@ export function ToluvaApp() {
                           Translation revision needs approval
                         </strong>
                       </div>
-                      <span>NO AUTOMATIC RETRY</span>
+                      <span>NO TTS SPEND YET</span>
                     </div>
                     <p>
                       Toluva preserved the measured speech attempt and stopped
                       before another ElevenLabs call. An exact, hash-bound
-                      shorter translation must be approved before this same
+                      translation revision must be approved before this same
                       job can resume.
+                    </p>
+                    <div className="transcript-review-signals">
+                      <div>
+                        <span>Segment</span>
+                        <strong>
+                          {activeJob.timingReview.segmentId} · attempt{" "}
+                          {activeJob.timingReview.attemptNumber}
+                        </strong>
+                      </div>
+                      <div>
+                        <span>Target</span>
+                        <strong>
+                          {activeJob.timingReview.targetSeconds.toFixed(2)}s
+                        </strong>
+                      </div>
+                      <div>
+                        <span>Required action</span>
+                        <strong>
+                          {readableAction(
+                            activeJob.timingReview.requestedAction,
+                          )}
+                        </strong>
+                      </div>
+                    </div>
+                    <label className="transcript-correction-field">
+                      <span>Approved German wording</span>
+                      <textarea
+                        disabled={timingReviewState === "submitting"}
+                        onChange={(event) =>
+                          setRevisedTranslation({
+                            handle: timingReviewHandle ?? "",
+                            value: event.target.value,
+                          })
+                        }
+                        rows={3}
+                        value={timingRevisionValue}
+                      />
+                      <small>
+                        {activeJob.timingReview.instruction} Keep{" "}
+                        {activeJob.timingReview.protectedTerms
+                          .map((term) => `“${term}”`)
+                          .join(", ")}{" "}
+                        exact.
+                      </small>
+                    </label>
+                    {timingReviewError && (
+                      <strong className="transcript-review-error">
+                        {timingReviewError}
+                      </strong>
+                    )}
+                    <button
+                      className="button button-primary"
+                      disabled={
+                        timingReviewState === "submitting" ||
+                        timingRevisionValue.trim().length === 0 ||
+                        timingRevisionValue.trim() ===
+                          activeJob.timingReview.currentTranslation.trim()
+                      }
+                      onClick={() => void approveTiming()}
+                    >
+                      {timingReviewState === "submitting"
+                        ? "Binding exact revision…"
+                        : "Approve wording and resume"}
+                    </button>
+                  </div>
+                )}
+              {activeJob.state === "blocked" &&
+                !activeJob.transcriptReview &&
+                !activeJob.timingReview && (
+                  <div className="transcript-review-panel">
+                    <div className="transcript-review-heading">
+                      <div>
+                        <span className="meta-label">
+                          GOVERNED REVIEW GATE
+                        </span>
+                        <strong>Review details are unavailable</strong>
+                      </div>
+                      <span>STOPPED SAFELY</span>
+                    </div>
+                    <p>
+                      The job remains durably blocked in B2. No provider retry
+                      will run until its exact review record is available.
                     </p>
                   </div>
                 )}
@@ -1547,7 +1712,7 @@ export function ToluvaApp() {
             </div>
 
             <p className="dialog-intro">
-              This first live lane accepts one short English speech turn,
+              This live lane accepts a short English clip from one speaker,
               verifies the German internal-training authorization, and writes
               the source plus immutable job request to Backblaze B2.
             </p>
@@ -1563,7 +1728,7 @@ export function ToluvaApp() {
                 type="file"
               />
               <small>
-                1–8 seconds · maximum 12 MB · single English speaker · must say
+                1–30 seconds · maximum 12 MB · one English speaker · must say
                 “Toluva”
               </small>
             </label>

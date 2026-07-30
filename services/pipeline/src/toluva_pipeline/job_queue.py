@@ -28,6 +28,12 @@ QUEUE_PATTERN = re.compile(
     r"jobs/(?P<job>localize-[a-f0-9]{32})/"
     r"de-de/queue/request\.json$"
 )
+REVISION_REQUEST_PATTERN = re.compile(
+    r"^(?P<prefix>projects/intake-[a-f0-9]{32}/"
+    r"jobs/localize-[a-f0-9]{32}/de-de/translations/)"
+    r"(?P<segment>[A-Za-z0-9][A-Za-z0-9_-]{0,127})/"
+    r"revision-requests/attempt-(?P<attempt>[1-9][0-9]*)\.json$"
+)
 JOB_VERSION = "live-v1"
 TARGET_LANGUAGE = "de-DE"
 PURPOSE = "internal-training"
@@ -146,6 +152,25 @@ class JobStatusWriter:
             raise ValueError(f"Unknown queue stage: {stage}")
         sequence, state, label = STAGES[stage]
         key = self._keys.status_event(self._scope, sequence, stage)
+        if stage == "timing-blocked":
+            entries = _list_entries(
+                self._backend,
+                f"{self._scope.job_prefix}/translations/",
+            )
+            entry_keys = {entry.key for entry in entries}
+            outstanding = sorted(
+                entry_key
+                for entry_key in entry_keys
+                if REVISION_REQUEST_PATTERN.fullmatch(entry_key)
+                and _revision_approval_key(entry_key) not in entry_keys
+            )
+            if outstanding:
+                match = REVISION_REQUEST_PATTERN.fullmatch(outstanding[-1])
+                assert match is not None
+                key = key.removesuffix(".json") + (
+                    f"-{match.group('segment')}-"
+                    f"attempt-{match.group('attempt')}.json"
+                )
         if self._backend.exists(key):
             return
         put_immutable(
@@ -191,14 +216,17 @@ def _utc(value: datetime) -> datetime:
     return value.astimezone(UTC)
 
 
-def _list_intake_entries(backend: S3StorageBackend) -> tuple[FileEntry, ...]:
-    """List one queue snapshot without per-job HEAD or GET transactions."""
+def _list_entries(
+    backend: S3StorageBackend,
+    prefix: str,
+) -> tuple[FileEntry, ...]:
+    """List one paginated B2 prefix without per-object transactions."""
 
     entries: list[FileEntry] = []
     continuation_token: str | None = None
     while True:
         page = backend.list(
-            "projects/intake-",
+            prefix,
             max_keys=1000,
             continuation_token=continuation_token,
         )
@@ -208,6 +236,23 @@ def _list_intake_entries(backend: S3StorageBackend) -> tuple[FileEntry, ...]:
         if page.next_token == continuation_token:
             raise RuntimeError("B2 queue listing returned a repeated page token")
         continuation_token = page.next_token
+
+
+def _list_intake_entries(backend: S3StorageBackend) -> tuple[FileEntry, ...]:
+    """List one queue snapshot without per-job HEAD or GET transactions."""
+
+    return _list_entries(backend, "projects/intake-")
+
+
+def _revision_approval_key(request_key: str) -> str:
+    match = REVISION_REQUEST_PATTERN.fullmatch(request_key)
+    if match is None:
+        raise ValueError("translation revision request key is invalid")
+    return request_key.replace(
+        "/revision-requests/",
+        "/approved-revisions/",
+        1,
+    )
 
 
 def process_queued_job(
@@ -307,20 +352,19 @@ def find_next_runnable_job(
             # It supersedes the old claim's freshness so the single worker can
             # continue immediately without repeating transcription.
             return project_id, job_id
-        timing_blocked_key = keys.status_event(
-            scope,
-            12,
-            "timing-blocked",
+        translation_prefix = f"{scope.job_prefix}/translations/"
+        revision_request_keys = tuple(
+            entry_key
+            for entry_key in entries_by_key
+            if entry_key.startswith(translation_prefix)
+            and REVISION_REQUEST_PATTERN.fullmatch(entry_key)
         )
-        if timing_blocked_key in entries_by_key:
-            translation_prefix = f"{scope.job_prefix}/translations/"
-            has_approved_revision = any(
-                entry_key.startswith(translation_prefix)
-                and "/approved-revisions/" in entry_key
-                and entry_key.endswith(".json")
-                for entry_key in entries_by_key
+        if revision_request_keys:
+            has_outstanding_revision = any(
+                _revision_approval_key(request_key) not in entries_by_key
+                for request_key in revision_request_keys
             )
-            if not has_approved_revision:
+            if has_outstanding_revision:
                 continue
             # An immutable approved revision is an explicit same-job resume
             # signal. The worker reuses prior timing attempts and parent

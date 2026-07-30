@@ -771,10 +771,10 @@ def run_live_end_to_end(
             raise EndToEndIntegrityError("Source media failed hash verification")
         if (
             not create_development_source_if_missing
-            and not 1.0 <= float(source.duration) <= 8.05
+            and not 1.0 <= float(source.duration) <= 30.05
         ):
             raise EndToEndIntegrityError(
-                "Queued source duration must be between 1 and 8 seconds"
+                "Queued source duration must be between 1 and 30 seconds"
             )
         progress("source-ready", "Verified the uploaded MP4 against its B2 bytes.")
 
