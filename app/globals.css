@@ -629,6 +629,119 @@ button:disabled {
   width: 100%;
 }
 
+.transcript-review-panel {
+  background: rgba(255, 118, 95, 0.08);
+  border: 1px solid rgba(183, 77, 59, 0.35);
+  margin-top: 16px;
+  padding: 18px;
+}
+
+.transcript-review-heading {
+  align-items: flex-start;
+  display: flex;
+  gap: 18px;
+  justify-content: space-between;
+}
+
+.transcript-review-heading strong {
+  display: block;
+  font-size: 13px;
+  margin-top: 6px;
+}
+
+.transcript-review-heading > span {
+  border: 1px solid #b54e3f;
+  color: #9c3f33;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 8px;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+  padding: 6px 8px;
+}
+
+.transcript-review-panel > p {
+  color: #62635d;
+  font-size: 9px;
+  line-height: 1.5;
+  margin: 12px 0;
+}
+
+.transcript-review-signals {
+  border: 1px solid var(--line);
+  display: grid;
+  grid-template-columns: 1fr 0.65fr 1fr;
+}
+
+.transcript-review-signals div {
+  border-right: 1px solid var(--line);
+  padding: 10px;
+}
+
+.transcript-review-signals div:last-child {
+  border-right: 0;
+}
+
+.transcript-review-signals span,
+.transcript-review-signals strong {
+  display: block;
+}
+
+.transcript-review-signals span {
+  color: #77776f;
+  font-size: 8px;
+}
+
+.transcript-review-signals strong {
+  font-size: 9px;
+  line-height: 1.4;
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+}
+
+.transcript-correction-field {
+  display: block;
+  margin-top: 13px;
+}
+
+.transcript-correction-field > span,
+.transcript-correction-field > small {
+  display: block;
+}
+
+.transcript-correction-field > span {
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.transcript-correction-field textarea {
+  background: var(--paper);
+  border: 1px solid #9e9789;
+  color: var(--ink);
+  font: 11px/1.5 var(--font-geist-sans), sans-serif;
+  margin-top: 7px;
+  min-height: 82px;
+  padding: 10px;
+  resize: vertical;
+  width: 100%;
+}
+
+.transcript-correction-field > small {
+  color: #74746c;
+  font-size: 8px;
+  margin-top: 5px;
+}
+
+.transcript-review-panel > .button {
+  margin-top: 12px;
+}
+
+.transcript-review-error {
+  color: #9c3f33;
+  display: block;
+  font-size: 9px;
+  margin-top: 9px;
+}
+
 .project-intro {
   align-items: flex-end;
   display: flex;
@@ -2345,6 +2458,23 @@ button:disabled {
 
   .job-output {
     grid-template-columns: 1fr;
+  }
+
+  .transcript-review-heading {
+    flex-direction: column;
+  }
+
+  .transcript-review-signals {
+    grid-template-columns: 1fr;
+  }
+
+  .transcript-review-signals div {
+    border-bottom: 1px solid var(--line);
+    border-right: 0;
+  }
+
+  .transcript-review-signals div:last-child {
+    border-bottom: 0;
   }
 
   .intake-contract {

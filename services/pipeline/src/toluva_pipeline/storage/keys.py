@@ -175,6 +175,28 @@ class ToluvaObjectKeys:
             f"{_opaque_id(segment_id, 'segment_id')}/summary.json"
         )
 
+    def transcript_quality(
+        self,
+        scope: StorageScope,
+        version: str = "v1",
+    ) -> str:
+        self._assert_scope(scope)
+        return (
+            f"{scope.job_prefix}/qa/transcript/"
+            f"{_opaque_id(version, 'version')}.json"
+        )
+
+    def transcript_human_review(
+        self,
+        scope: StorageScope,
+        version: str = "v1",
+    ) -> str:
+        self._assert_scope(scope)
+        return (
+            f"{scope.job_prefix}/qa/transcript/"
+            f"{_opaque_id(version, 'version')}-human-review.json"
+        )
+
     def captions(
         self,
         scope: StorageScope,

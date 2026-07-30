@@ -126,6 +126,34 @@ def test_status_writer_is_append_only_and_idempotent() -> None:
     assert len(backend.objects) == 1
 
 
+def test_status_writer_exposes_transcript_review_states() -> None:
+    backend = MemoryBackend()
+    scope = StorageScope(
+        f"intake-{'a' * 32}",
+        f"localize-{'b' * 32}",
+        "de-DE",
+    )
+    keys = ToluvaObjectKeys(scope.project_id)
+    writer = JobStatusWriter(
+        backend,  # type: ignore[arg-type]
+        scope=scope,
+        keys=keys,
+        clock=lambda: datetime(2026, 7, 30, 12, 0, tzinfo=UTC),
+    )
+    writer.emit("transcript-reviewed", "Quality passed.")
+    writer.emit("transcript-blocked", "Review required.")
+    passed = json.loads(
+        backend.objects[keys.status_event(scope, 6, "transcript-reviewed")]
+    )
+    blocked = json.loads(
+        backend.objects[keys.status_event(scope, 6, "transcript-blocked")]
+    )
+    assert passed["state"] == "running"
+    assert passed["label"] == "Transcript quality passed"
+    assert blocked["state"] == "blocked"
+    assert blocked["label"] == "Transcript review required"
+
+
 def test_stale_claim_is_recovered_but_recent_claim_is_not() -> None:
     backend = MemoryBackend()
     payload = request_payload()
@@ -159,6 +187,8 @@ def test_stale_claim_is_recovered_but_recent_claim_is_not() -> None:
 def test_completed_or_failed_jobs_are_never_reclaimed() -> None:
     for terminal_sequence, terminal_stage in (
         (12, "completed"),
+        (13, "completed"),
+        (14, "completed"),
         (99, "failed"),
     ):
         backend = MemoryBackend()
@@ -184,6 +214,42 @@ def test_completed_or_failed_jobs_are_never_reclaimed() -> None:
         assert backend.list_calls == 1
         assert backend.exists_calls == 0
         assert backend.get_calls == 0
+
+
+def test_blocked_transcript_resumes_only_after_human_review() -> None:
+    backend = MemoryBackend()
+    payload = request_payload()
+    scope = StorageScope(
+        str(payload["project_id"]),
+        str(payload["job_id"]),
+        "de-DE",
+    )
+    keys = ToluvaObjectKeys(scope.project_id)
+    backend.objects[keys.queue_request(scope)] = json.dumps(payload).encode()
+    backend.objects[
+        keys.status_event(scope, 6, "transcript-blocked")
+    ] = b"{}"
+    backend.objects[
+        keys.status_event(scope, 2, "claimed")
+    ] = b"{}"
+
+    assert (
+        find_next_runnable_job(
+            backend,  # type: ignore[arg-type]
+            now=datetime(2026, 7, 29, 13, 0, tzinfo=UTC),
+            stale_claim_seconds=90,
+        )
+        is None
+    )
+
+    backend.objects[
+        keys.transcript_human_review(scope, "live-v1")
+    ] = b"{}"
+    assert find_next_runnable_job(
+        backend,  # type: ignore[arg-type]
+        now=datetime(2026, 7, 29, 12, 0, tzinfo=UTC),
+        stale_claim_seconds=90,
+    ) == (scope.project_id, scope.job_id)
 
 
 def test_final_record_is_a_terminal_queue_marker() -> None:

@@ -14,6 +14,11 @@ The first vertical-slice foundation includes:
 - One Genblaze run and manifest per speech attempt with parent/child lineage
 - Append-only B2 translation, timing, failure, and summary records
 - Validated timed-transcript and WebVTT generation
+- A deterministic transcript-quality gate between STT and translation that
+  checks language probability, confidence distribution, protected terms, and
+  suspicious trailing fragments
+- A separate immutable, hash-bound human correction that resumes the same job
+  from stored transcription without spending TTS credits while blocked
 - A Toluva Genblaze FFmpeg compositor that fans in video, localized audio, and
   captions
 - Embedded MP4 caption tracks plus durable WebVTT sidecars
@@ -237,11 +242,14 @@ PYTHONPATH=services/pipeline/src \
   --confirm-spend
 ```
 
-The explicit flag is still required because a fresh job makes one ElevenLabs
-call. Before execution the worker verifies the request contract, B2 source key,
-byte count, and SHA-256. It then emits one append-only B2 event per stage. An
-exact replay of a completed job returns the final checkpoint without rerunning
-Whisper, Argos, ElevenLabs, or FFmpeg.
+The explicit flag is still required because an accepted fresh job makes one
+ElevenLabs call. Before execution the worker verifies the request contract, B2
+source key, byte count, and SHA-256. After Whisper, a questionable transcript
+is stored as `blocked` before Argos or ElevenLabs. An operator correction is a
+separate immutable B2 record tied to the provider-text hash; once present, the
+single worker resumes that exact job without rerunning Whisper. An exact replay
+of a completed job returns the final checkpoint without rerunning Whisper,
+Argos, ElevenLabs, or FFmpeg.
 
 ## Persistent production worker
 
@@ -257,9 +265,9 @@ Its production contract is deliberately narrow:
 
 - Run exactly one replica. B2 request discovery and the append-only claim event
   are durable but not an atomic compare-and-swap lock.
-- Poll every five seconds by default and back off to at most 60 seconds after a
-  transient queue or heartbeat error.
-- Publish a secret-safe B2 heartbeat every 30 seconds with a 90-second lease.
+- Poll every 60 seconds in production and use bounded backoff after a transient
+  queue or heartbeat error.
+- Publish a secret-safe B2 heartbeat every 60 seconds with a finite lease.
   This heartbeat is the one intentionally mutable runtime record; job events
   and generated assets remain append-only.
 - Refuse startup unless B2, ElevenLabs, FFmpeg, FFprobe, the pinned Whisper
@@ -269,6 +277,8 @@ Its production contract is deliberately narrow:
   permits it and do not claim a new job. If the host kills the process during a
   job, a replacement may resume the same request after the stale-claim window
   by loading its immutable B2 checkpoints.
+- Treat an immutable transcript human-review record as an immediate resume
+  signal for its blocked job; the old claim timeout must not delay approval.
 - Never place provider or B2 credentials in the web container.
 
 The dashboard polls the heartbeat through a server-only route. An expired or

@@ -29,7 +29,7 @@ from toluva_pipeline.storage.keys import StorageScope
 WORKER_HEARTBEAT_KEY = (
     "projects/system-runtime/workers/primary/heartbeat.json"
 )
-WORKER_ENGINE_VERSION = "queue-v2"
+WORKER_ENGINE_VERSION = "queue-v3"
 MIN_WORKER_POLL_SECONDS = 60
 MIN_WORKER_HEARTBEAT_SECONDS = 60
 EXPECTED_WHISPER_SHA256 = (
@@ -274,7 +274,11 @@ class QueueWorkerRuntime:
         except Exception as exc:
             self._set_state(WorkerState("idle"), publish=True)
             return {
-                "status": "failed",
+                "status": (
+                    "blocked"
+                    if getattr(exc, "job_state", None) == "blocked"
+                    else "failed"
+                ),
                 "project_id": project_id,
                 "job_id": job_id,
                 "error_type": type(exc).__name__,

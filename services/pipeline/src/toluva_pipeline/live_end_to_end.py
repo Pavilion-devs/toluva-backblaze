@@ -38,6 +38,12 @@ from toluva_pipeline.domain.correction import (
 )
 from toluva_pipeline.domain.timing import TimingPolicy
 from toluva_pipeline.domain.transcript import TimedSegment, TimedTranscript, to_webvtt
+from toluva_pipeline.domain.transcript_quality import (
+    POLICY_VERSION,
+    TranscriptQualityBlocked,
+    evaluate_transcript_quality,
+    validated_human_review_text,
+)
 from toluva_pipeline.domain.transcription import timed_transcript_from_scribe
 from toluva_pipeline.live_timing_correction import (
     GenblazeElevenLabsAttemptGenerator,
@@ -137,6 +143,10 @@ class LiveEndToEndReport:
     live_transcription: bool
     live_translation: bool
     live_tts: bool
+    transcript_quality_key: str | None = None
+    transcript_quality_decision: str = "not-recorded"
+    transcript_review_key: str | None = None
+    effective_source_text: str | None = None
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -448,6 +458,8 @@ def run_live_end_to_end(
     source_version = f"{version}-{job_id}"
     transcript_key = keys.transcript(source_version)
     segments_key = keys.segments(source_version)
+    transcript_quality_key = keys.transcript_quality(scope, version)
+    transcript_review_key = keys.transcript_human_review(scope, version)
     captions_key = keys.captions(scope, version)
     disclosure_key = keys.disclosure(scope, version)
     stage_journal = B2StageJournal(
@@ -652,14 +664,127 @@ def run_live_end_to_end(
             content_type="application/json",
         )
         source_segment = timed_transcript.segments[0]
-        if any(term not in source_segment.text for term in protected_terms):
-            raise EndToEndIntegrityError(
-                "Live transcription did not preserve every protected term"
-            )
+        detected_source_text = source_segment.text
         progress(
             "transcribed",
             "Stored the timed transcript and protected-term decision in B2.",
         )
+        if storage.backend.exists(transcript_quality_key):
+            transcript_quality = json.loads(
+                storage.backend.get(transcript_quality_key)
+            )
+            if not isinstance(transcript_quality, dict):
+                raise EndToEndIntegrityError(
+                    "Stored transcript quality review is malformed"
+                )
+            resumed.append("transcript-quality")
+        else:
+            review = evaluate_transcript_quality(
+                raw_transcript,
+                protected_terms=protected_terms,
+            )
+            transcript_quality = {
+                "schema_version": "1.0",
+                "record_type": "transcript_quality_review",
+                "project_id": project_id,
+                "job_id": job_id,
+                "source_sha256": str(source.sha256),
+                "transcript_key": transcript_key,
+                "provider_asset_key": transcription_checkpoint["asset_key"],
+                "detected_text": str(raw_transcript["text"]).strip(),
+                **review.to_dict(),
+            }
+            put_immutable(
+                storage.backend,
+                transcript_quality_key,
+                _json_bytes(transcript_quality),
+                content_type="application/json",
+            )
+        detected_text = str(raw_transcript["text"]).strip()
+        detected_text_sha256 = hashlib.sha256(
+            detected_text.encode("utf-8")
+        ).hexdigest()
+        raw_reason_codes = transcript_quality.get("reason_codes")
+        if (
+            transcript_quality.get("record_type")
+            != "transcript_quality_review"
+            or transcript_quality.get("project_id") != project_id
+            or transcript_quality.get("job_id") != job_id
+            or transcript_quality.get("source_sha256") != str(source.sha256)
+            or transcript_quality.get("transcript_key") != transcript_key
+            or transcript_quality.get("policy_version") != POLICY_VERSION
+            or transcript_quality.get("detected_text") != detected_text
+            or transcript_quality.get("text_sha256")
+            != detected_text_sha256
+            or not isinstance(raw_reason_codes, list)
+        ):
+            raise EndToEndIntegrityError(
+                "Stored transcript quality review does not match the job"
+            )
+        transcript_quality_decision = str(
+            transcript_quality.get("decision", "")
+        )
+        if (
+            transcript_quality_decision == "accepted"
+            and raw_reason_codes
+        ) or (
+            transcript_quality_decision == "review_required"
+            and not raw_reason_codes
+        ):
+            raise EndToEndIntegrityError(
+                "Stored transcript quality decision contradicts its evidence"
+            )
+        if transcript_quality_decision not in {
+            "accepted",
+            "review_required",
+        }:
+            raise EndToEndIntegrityError(
+                "Stored transcript quality decision is unsupported"
+            )
+        if transcript_quality_decision != "accepted":
+            if storage.backend.exists(transcript_review_key):
+                human_review = json.loads(
+                    storage.backend.get(transcript_review_key)
+                )
+                corrected_text = validated_human_review_text(
+                    human_review,
+                    original_text_sha256=str(
+                        transcript_quality.get("text_sha256", "")
+                    ),
+                    protected_terms=protected_terms,
+                    project_id=project_id,
+                    job_id=job_id,
+                )
+                source_segment = TimedSegment(
+                    segment_id=source_segment.segment_id,
+                    start_seconds=source_segment.start_seconds,
+                    end_seconds=source_segment.end_seconds,
+                    text=corrected_text,
+                    speaker_id=source_segment.speaker_id,
+                )
+                transcript_quality_decision = "human-approved"
+                resumed.append("transcript-human-review")
+                progress(
+                    "transcript-approved",
+                    "An immutable operator correction passed protected-term checks.",
+                )
+            else:
+                raw_reasons = transcript_quality.get("reason_codes", ())
+                reason_codes = tuple(
+                    str(value)
+                    for value in raw_reasons
+                    if isinstance(value, str)
+                )
+                progress(
+                    "transcript-blocked",
+                    "Suspicious transcript evidence requires human review; translation and TTS were not called.",
+                )
+                raise TranscriptQualityBlocked(reason_codes)
+        else:
+            progress(
+                "transcript-reviewed",
+                "Transcript confidence, protected terms, and trailing-fragment checks passed.",
+            )
 
         translation_stage = "translation-argos-en-de"
         translation_checkpoint = stage_journal.completion(translation_stage)
@@ -1071,7 +1196,7 @@ def run_live_end_to_end(
             transcript_key=transcript_key,
             segments_key=segments_key,
             segment_count=len(timed_transcript.segments),
-            detected_source_text=source_segment.text,
+            detected_source_text=detected_source_text,
             translation_provider="argos-translate-offline",
             translation_model=ARGOS_MODEL,
             translation_run_id=str(translation_checkpoint["run_id"]),
@@ -1105,6 +1230,14 @@ def run_live_end_to_end(
             live_transcription=True,
             live_translation=True,
             live_tts=True,
+            transcript_quality_key=transcript_quality_key,
+            transcript_quality_decision=transcript_quality_decision,
+            transcript_review_key=(
+                transcript_review_key
+                if transcript_quality_decision == "human-approved"
+                else None
+            ),
+            effective_source_text=source_segment.text,
         )
         put_immutable(
             storage.backend,

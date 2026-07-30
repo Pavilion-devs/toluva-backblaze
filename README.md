@@ -41,6 +41,11 @@ Genblaze, and stores verified media and provenance in B2.
   correction attempt
 - Validated timed-transcript and segmentation records with deterministic
   WebVTT caption generation
+- A deterministic pre-TTS transcript-quality gate that records confidence,
+  protected-term, and suspicious-tail evidence in B2; questionable transcripts
+  block before translation or ElevenLabs
+- An immutable, hash-bound operator-correction record that resumes the same job
+  without rewriting provider evidence or repeating transcription
 - A real Genblaze composition fan-in over source video, the selected localized
   audio, and captions
 - A verified 3.8-second H.264/AAC/`mov_text` MP4, B2-backed caption sidecar,
@@ -63,7 +68,7 @@ Genblaze, and stores verified media and provenance in B2.
 - A governed 1–8 second MP4 intake that writes source, source record, immutable
   queue request, and first status event directly to Backblaze B2
 - A B2 queue consumer that validates the uploaded source hash, runs the real
-  Genblaze engine, and appends 12 visible progress stages
+  Genblaze engine, and appends visible progress or review-blocked stages
 - A persistent one-replica worker runtime with leased B2 heartbeats,
   interruption recovery, bounded polling backoff, and graceful shutdown
 - A reproducible non-root Linux worker image with pinned CPU-only Python

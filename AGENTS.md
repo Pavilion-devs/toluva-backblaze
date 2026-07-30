@@ -296,6 +296,23 @@ The verified fixture-free execution contract is:
   verifiable Genblaze manifests.
 - Independently re-hash the final B2 object before reporting success.
 
+The pre-TTS transcript-quality contract is:
+
+- Preserve the provider transcript and word-confidence payload exactly as
+  detected. Never overwrite it with an operator correction.
+- After transcription and before translation, evaluate language probability,
+  mean and low-confidence word ratios, protected-term confidence, and
+  suspicious trailing fragments against a versioned deterministic policy.
+- Store the decision, reason codes, thresholds, evidence, and original-text
+  SHA-256 at the fixed job-scoped B2 transcript-QA key.
+- A `review_required` decision is a visible `blocked` state, not a failed job.
+  It must stop before translation and ElevenLabs, so no TTS credit can be spent.
+- Resume only from a separate immutable human-review record whose original hash
+  matches the provider text, whose corrected-text hash matches its contents,
+  and whose text preserves every protected term.
+- Resume the same job immediately after that record appears. Reuse the stored
+  transcription checkpoint and never repeat STT merely because review occurred.
+
 The persistent worker contract is:
 
 - Deploy exactly one worker replica. The current B2 claim is durable and
@@ -313,8 +330,9 @@ The persistent worker contract is:
   finite, secret-safe, and consumed only by the server bridge.
 - Treat every other job status event, provider intent/completion, manifest, and
   media object as immutable.
-- Resume a stale claimed job only after the configured stale-claim window and
-  only through its durable stage checkpoints.
+- Resume an ordinary stale claim only after the configured stale-claim window.
+  An immutable transcript human-review record is an explicit resume signal and
+  may wake its blocked job immediately through the existing checkpoints.
 - On termination, do not claim a new job. A hard kill may interrupt the current
   synchronous step; the replacement worker must recover from B2 rather than
   local process memory.

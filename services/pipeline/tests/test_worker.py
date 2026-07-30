@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from toluva_pipeline.domain.transcript_quality import TranscriptQualityBlocked
 from toluva_pipeline.job_queue import TARGET_LANGUAGE
 from toluva_pipeline.settings import Settings
 from toluva_pipeline.storage.keys import StorageScope, ToluvaObjectKeys
@@ -153,6 +154,31 @@ def test_runtime_processes_one_job_and_returns_to_idle() -> None:
     assert calls == [(scope.project_id, scope.job_id)]
     heartbeat = json.loads(backend.objects[WORKER_HEARTBEAT_KEY])
     assert heartbeat["state"] == "idle"
+
+
+def test_runtime_reports_transcript_review_as_blocked() -> None:
+    backend = MemoryBackend()
+    scope, _ = queued_request(backend)
+
+    def processor(
+        _settings: Settings,
+        *,
+        project_id: str,
+        job_id: str,
+    ) -> object:
+        assert (project_id, job_id) == (scope.project_id, scope.job_id)
+        raise TranscriptQualityBlocked(("suspicious_trailing_fragment",))
+
+    runtime = QueueWorkerRuntime(
+        settings(),
+        backend=backend,  # type: ignore[arg-type]
+        processor=processor,
+        clock=lambda: datetime(2026, 7, 30, 12, 0, tzinfo=UTC),
+        worker_id="worker-test",
+    )
+    result = runtime.run_once()
+    assert result["status"] == "blocked"
+    assert result["error_type"] == "TranscriptQualityBlocked"
 
 
 def test_idle_poll_does_not_republish_the_heartbeat() -> None:

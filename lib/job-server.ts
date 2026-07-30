@@ -14,9 +14,13 @@ import {
   MAX_UPLOAD_BYTES,
   MIN_CLIP_SECONDS,
   finalRecordKey,
+  isIntakeProjectId,
+  isLocalizationJobId,
   jobPrefix,
   queueRequestKey,
   statusPrefix,
+  transcriptHumanReviewKey,
+  transcriptQualityKey,
   type JobEvent,
   type QueueRequest,
 } from "./job-contract";
@@ -31,6 +35,37 @@ type CompletedJobRecord = {
 };
 
 export type JobMediaKind = "source" | "final" | "captions" | "speech";
+
+type TranscriptQualityRecord = {
+  decision: "accepted" | "review_required";
+  detected_text: string;
+  job_id: string;
+  language_probability: number | null;
+  mean_word_confidence: number | null;
+  project_id: string;
+  reason_codes: string[];
+  record_type: "transcript_quality_review";
+  text_sha256: string;
+  trailing_text: string;
+};
+
+type TranscriptHumanReviewRecord = {
+  corrected_text: string;
+  corrected_text_sha256: string;
+  decision: "approved";
+  job_id: string;
+  original_text_sha256: string;
+  project_id: string;
+  record_type: "transcript_human_review";
+};
+
+export type TranscriptReviewView = {
+  detectedText: string;
+  languageProbability: number | null;
+  meanWordConfidence: number | null;
+  reasonCodes: string[];
+  trailingText: string;
+};
 
 function compactUuid(prefix: string): string {
   return `${prefix}-${crypto.randomUUID().replaceAll("-", "")}`;
@@ -173,6 +208,7 @@ export async function readJobStatus(
     | "target_language"
   >;
   state: JobEvent["state"];
+  transcriptReview?: TranscriptReviewView;
 }> {
   const prefix = jobPrefix(projectId, jobId);
   const request = await getB2ProjectJson<QueueRequest>(
@@ -198,6 +234,28 @@ export async function readJobStatus(
     )
     .sort((left, right) => left.sequence - right.sequence);
   if (validEvents.length === 0) throw new Error("job_status_missing");
+  const currentState = validEvents.at(-1)!.state;
+  let transcriptReview: TranscriptReviewView | undefined;
+  if (currentState === "blocked") {
+    const quality = await getB2ProjectJson<TranscriptQualityRecord>(
+      transcriptQualityKey(projectId, jobId),
+    );
+    if (
+      quality.record_type !== "transcript_quality_review" ||
+      quality.project_id !== projectId ||
+      quality.job_id !== jobId ||
+      quality.decision !== "review_required"
+    ) {
+      throw new Error("transcript_quality_scope_mismatch");
+    }
+    transcriptReview = {
+      detectedText: quality.detected_text,
+      languageProbability: quality.language_probability,
+      meanWordConfidence: quality.mean_word_confidence,
+      reasonCodes: quality.reason_codes,
+      trailingText: quality.trailing_text,
+    };
+  }
 
   const finalFiles = await listB2ProjectFiles(
     `${prefix}/final/${JOB_VERSION}.json`,
@@ -217,8 +275,153 @@ export async function readJobStatus(
       source_size_bytes: request.source_size_bytes,
       target_language: request.target_language,
     },
-    state: validEvents.at(-1)!.state,
+    state: currentState,
+    ...(transcriptReview ? { transcriptReview } : {}),
   };
+}
+
+function normalizedTranscriptCorrection(value: unknown): string {
+  if (typeof value !== "string") {
+    throw new Error("corrected_transcript_required");
+  }
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (normalized.length < 1 || normalized.length > 1000) {
+    throw new Error("corrected_transcript_size_invalid");
+  }
+  if (!normalized.includes("Toluva")) {
+    throw new Error("corrected_transcript_lost_protected_term");
+  }
+  if (/(?:\.{3}|…)\s*$/.test(normalized)) {
+    throw new Error("corrected_transcript_trailing_fragment");
+  }
+  return normalized;
+}
+
+function transcriptApprovedEvent(
+  projectId: string,
+  jobId: string,
+  createdAt: string,
+): JobEvent {
+  return {
+    created_at: createdAt,
+    job_id: jobId,
+    label: "Transcript correction approved",
+    message:
+      "An immutable operator correction passed protected-term checks.",
+    project_id: projectId,
+    record_type: "job_status_event",
+    schema_version: "1.0",
+    sequence: 7,
+    stage: "transcript-approved",
+    state: "running",
+  };
+}
+
+export async function approveTranscriptCorrection(input: {
+  correctedText?: unknown;
+  jobId?: unknown;
+  projectId?: unknown;
+}) {
+  const projectId =
+    typeof input.projectId === "string" ? input.projectId : "";
+  const jobId = typeof input.jobId === "string" ? input.jobId : "";
+  if (
+    !isIntakeProjectId(projectId) ||
+    !isLocalizationJobId(jobId)
+  ) {
+    throw new Error("invalid_job_handle");
+  }
+  const correctedText = normalizedTranscriptCorrection(
+    input.correctedText,
+  );
+  const blockedKey =
+    `${statusPrefix(projectId, jobId)}06-transcript-blocked.json`;
+  const approvedStatusKey =
+    `${statusPrefix(projectId, jobId)}07-transcript-approved.json`;
+  const statusFiles = await listB2ProjectFiles(
+    statusPrefix(projectId, jobId),
+  );
+  if (!statusFiles.some((file) => file.fileName === blockedKey)) {
+    throw new Error("transcript_review_not_blocked");
+  }
+  const quality = await getB2ProjectJson<TranscriptQualityRecord>(
+    transcriptQualityKey(projectId, jobId),
+  );
+  if (
+    quality.record_type !== "transcript_quality_review" ||
+    quality.project_id !== projectId ||
+    quality.job_id !== jobId ||
+    quality.decision !== "review_required"
+  ) {
+    throw new Error("transcript_quality_scope_mismatch");
+  }
+  const detectedTextSha256 = hex(
+    await crypto.subtle.digest(
+      "SHA-256",
+      new TextEncoder().encode(quality.detected_text),
+    ),
+  );
+  if (detectedTextSha256 !== quality.text_sha256) {
+    throw new Error("transcript_quality_hash_mismatch");
+  }
+
+  const reviewKey = transcriptHumanReviewKey(projectId, jobId);
+  const existingReview = await listB2ProjectFiles(reviewKey);
+  if (existingReview.some((file) => file.fileName === reviewKey)) {
+    const existing =
+      await getB2ProjectJson<TranscriptHumanReviewRecord>(reviewKey);
+    if (
+      existing.project_id !== projectId ||
+      existing.job_id !== jobId ||
+      existing.corrected_text !== correctedText
+    ) {
+      throw new Error("transcript_review_conflict");
+    }
+    if (
+      !statusFiles.some(
+        (file) => file.fileName === approvedStatusKey,
+      )
+    ) {
+      const uploader = await createB2ProjectUploader();
+      await uploader.putJson(
+        approvedStatusKey,
+        transcriptApprovedEvent(
+          projectId,
+          jobId,
+          new Date().toISOString(),
+        ),
+      );
+    }
+    return readJobStatus(projectId, jobId);
+  }
+
+  const correctedTextSha256 = hex(
+    await crypto.subtle.digest(
+      "SHA-256",
+      new TextEncoder().encode(correctedText),
+    ),
+  );
+  const createdAt = new Date().toISOString();
+  const uploader = await createB2ProjectUploader();
+  await uploader.putJson(reviewKey, {
+    corrected_text: correctedText,
+    corrected_text_sha256: correctedTextSha256,
+    created_at: createdAt,
+    decision: "approved",
+    job_id: jobId,
+    original_text_sha256: quality.text_sha256,
+    project_id: projectId,
+    protected_terms: ["Toluva"],
+    reason_codes: quality.reason_codes,
+    record_type: "transcript_human_review",
+    reviewer_type: "authenticated-toluva-operator",
+    schema_version: "1.0",
+  } satisfies TranscriptHumanReviewRecord & Record<string, unknown>);
+  await uploader.putJson(
+    approvedStatusKey,
+    transcriptApprovedEvent(projectId, jobId, createdAt),
+  );
+  return readJobStatus(projectId, jobId);
 }
 
 export async function proxyCompletedJobMedia(

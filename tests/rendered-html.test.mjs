@@ -4,14 +4,18 @@ import test from "node:test";
 
 const templateRoot = new URL("../", import.meta.url);
 
-async function render(path = "/") {
+async function render(path = "/", init = {}) {
   const workerUrl = new URL("../dist/server/index.js", import.meta.url);
   workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}`);
   const { default: worker } = await import(workerUrl.href);
 
   return worker.fetch(
     new Request(new URL(path, "http://localhost/"), {
-      headers: { accept: "text/html" },
+      ...init,
+      headers: {
+        accept: "text/html",
+        ...init.headers,
+      },
     }),
     {
       ASSETS: {
@@ -90,6 +94,24 @@ test("rejects malformed durable job handles before a B2 read", async () => {
   assert.equal(response.status, 400);
   assert.deepEqual(await response.json(), {
     error: "invalid_job_handle",
+    ok: false,
+  });
+});
+
+test("rejects malformed transcript approvals before a B2 write", async () => {
+  const response = await render("/api/transcript-review", {
+    body: JSON.stringify({
+      correctedText: "Welcome to Toluva.",
+      jobId: "not-a-job",
+      projectId: "../../private",
+    }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), {
+    error: "invalid_job_handle",
+    message: "The transcript correction did not meet the review contract.",
     ok: false,
   });
 });

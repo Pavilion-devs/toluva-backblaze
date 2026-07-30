@@ -85,3 +85,20 @@ export function finalRecordKey(
 ): string {
   return `${jobPrefix(projectId, jobId)}/final/${JOB_VERSION}.json`;
 }
+
+export function transcriptQualityKey(
+  projectId: string,
+  jobId: string,
+): string {
+  return `${jobPrefix(projectId, jobId)}/qa/transcript/${JOB_VERSION}.json`;
+}
+
+export function transcriptHumanReviewKey(
+  projectId: string,
+  jobId: string,
+): string {
+  return (
+    `${jobPrefix(projectId, jobId)}/qa/transcript/` +
+    `${JOB_VERSION}-human-review.json`
+  );
+}

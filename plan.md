@@ -503,6 +503,8 @@ projects/{project_id}/
   jobs/{job_id}/
     {language}/
       translations/{segment_id}/attempt-{n}.json
+      qa/transcript/{version}.json
+      qa/transcript/{version}-human-review.json
       speech/{segment_id}/attempt-{n}.{ext}
       captions/{version}.vtt
       composition/intermediate/{asset_id}.{ext}
@@ -662,6 +664,8 @@ The user sees:
 - [x] B2 source storage
 - [x] Timed transcription
 - [x] Segmentation
+- [x] Pre-TTS transcript confidence and trailing-fragment gate
+- [x] Immutable, hash-bound transcript correction and same-job resume
 - [x] Voice-authorization record
 - [x] Pre-generation authorization gate
 - [ ] Target-language selection
@@ -1054,6 +1058,21 @@ Controlled production handshake completed on July 30:
   translated that tail. The engine correctly preserved and disclosed what it
   detected, but judge-facing runs need a cleaner rights-cleared recording plus
   transcript-confidence and trailing-hallucination review before TTS.
+- Added that review boundary as a deterministic engine stage. The exact
+  production transcript now evaluates to `review_required` with reason
+  `suspicious_trailing_fragment`, mean word confidence `0.690804`, and trailing
+  evidence `Languages which is...`.
+- The worker stores the policy, thresholds, reason codes, confidence evidence,
+  provider-text hash, and detected text under the job's fixed B2 transcript-QA
+  key. A review-required job becomes visibly `blocked` before Argos or
+  ElevenLabs and is not recorded as a pipeline failure.
+- The hosted workbench exposes only the sanitized evidence and accepts a
+  corrected transcript through a server-only route. The correction is
+  normalized, protected-term checked, hash-bound to the provider transcript,
+  and stored separately as an immutable human-review record.
+- That review record wakes the same job immediately, even while its original
+  claim is fresh. The resumed worker reuses the transcription checkpoint and
+  raw transcript, so review cannot create another STT call or erase evidence.
 
 ## 16. Delivery Schedule
 
@@ -1699,6 +1718,20 @@ Reason: The run crossed every real deployment boundary, produced four verified
 Genblaze manifests and playable captioned media, and survived an exact replay
 without a new object or provider call. The discovered transcript tail remains
 a recorded quality issue, not a reason to rewrite immutable evidence.
+
+### 2026-07-30 — Pre-TTS transcript-quality and human-review gate
+
+Decision: Evaluate transcript confidence and trailing-fragment evidence after
+STT but before translation. Persist a versioned deterministic review record in
+B2. A suspicious result becomes a `blocked` job with zero TTS spend. Preserve
+the raw provider transcript forever and resume only from a separate immutable
+operator correction bound to the original text hash and protected terms.
+
+Reason: The production handshake proved that even a high language-probability
+transcript can contain a confident-looking hallucinated tail. Translating that
+tail would waste provider credits and weaken the demo. This boundary turns the
+failure into visible, domain-specific QA, keeps provenance honest, and lets a
+reviewed correction resume the same durable job without repeating STT.
 
 ## 22. Official References
 

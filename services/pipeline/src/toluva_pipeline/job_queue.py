@@ -12,6 +12,7 @@ from typing import Callable
 from genblaze_core import FileEntry
 from genblaze_s3 import S3StorageBackend
 
+from toluva_pipeline.domain.transcript_quality import TranscriptQualityBlocked
 from toluva_pipeline.live_end_to_end import LiveEndToEndReport, run_live_end_to_end
 from toluva_pipeline.settings import Settings
 from toluva_pipeline.storage.b2 import build_b2_storage
@@ -32,13 +33,16 @@ STAGES: dict[str, tuple[int, str, str]] = {
     "source-ready": (3, "running", "Source verified"),
     "transcribing": (4, "running", "Transcribing timed speech"),
     "transcribed": (5, "running", "Transcript stored"),
-    "translating": (6, "running", "Translating protected terms"),
-    "translated": (7, "running", "Translation verified"),
-    "authorized": (8, "running", "Voice authorization passed"),
-    "synthesizing": (9, "running", "Generating localized speech"),
-    "timing-qa": (10, "running", "Measuring timing drift"),
-    "composing": (11, "running", "Composing final media"),
-    "completed": (12, "completed", "Localization completed"),
+    "transcript-reviewed": (6, "running", "Transcript quality passed"),
+    "transcript-blocked": (6, "blocked", "Transcript review required"),
+    "transcript-approved": (7, "running", "Transcript correction approved"),
+    "translating": (8, "running", "Translating protected terms"),
+    "translated": (9, "running", "Translation verified"),
+    "authorized": (10, "running", "Voice authorization passed"),
+    "synthesizing": (11, "running", "Generating localized speech"),
+    "timing-qa": (12, "running", "Measuring timing drift"),
+    "composing": (13, "running", "Composing final media"),
+    "completed": (14, "completed", "Localization completed"),
     "failed": (99, "failed", "Localization stopped safely"),
 }
 
@@ -241,6 +245,8 @@ def process_queued_job(
             version=request.version,
             on_progress=status.emit,
         )
+    except TranscriptQualityBlocked:
+        raise
     except Exception:
         status.emit(
             "failed",
@@ -279,12 +285,23 @@ def find_next_runnable_job(
         scope = StorageScope(project_id, job_id, TARGET_LANGUAGE)
         keys = ToluvaObjectKeys(project_id)
         terminal_keys = (
+            keys.status_event(scope, 14, "completed"),
+            keys.status_event(scope, 13, "completed"),
             keys.status_event(scope, 12, "completed"),
             keys.status_event(scope, 99, "failed"),
             keys.final_record(scope, JOB_VERSION),
         )
         if any(key in entries_by_key for key in terminal_keys):
             continue
+        blocked_key = keys.status_event(scope, 6, "transcript-blocked")
+        review_key = keys.transcript_human_review(scope, JOB_VERSION)
+        if blocked_key in entries_by_key and review_key not in entries_by_key:
+            continue
+        if blocked_key in entries_by_key and review_key in entries_by_key:
+            # The immutable human-review record is an explicit resume signal.
+            # It supersedes the old claim's freshness so the single worker can
+            # continue immediately without repeating transcription.
+            return project_id, job_id
         claim_entry = entries_by_key.get(
             keys.status_event(scope, 2, "claimed")
         )

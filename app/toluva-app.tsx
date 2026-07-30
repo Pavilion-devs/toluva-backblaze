@@ -29,6 +29,19 @@ type UploadState =
   | "uploading"
   | "created"
   | "error";
+type TranscriptReviewState =
+  | "idle"
+  | "submitting"
+  | "recorded"
+  | "error";
+
+type TranscriptReview = {
+  detectedText: string;
+  languageProbability: number | null;
+  meanWordConfidence: number | null;
+  reasonCodes: string[];
+  trailingText: string;
+};
 
 type ActiveJob = {
   events: JobEvent[];
@@ -43,6 +56,7 @@ type ActiveJob = {
   };
   state: JobState;
   statusUrl: string;
+  transcriptReview?: TranscriptReview;
 };
 
 const ACTIVE_JOB_STORAGE_KEY = "toluva-active-b2-job";
@@ -196,6 +210,15 @@ export function ToluvaApp() {
   const [statusWarning, setStatusWarning] = useState<string | null>(null);
   const [workerConnection, setWorkerConnection] =
     useState<WorkerConnectionState>("checking");
+  const [correctedTranscript, setCorrectedTranscript] = useState("");
+  const [transcriptReviewState, setTranscriptReviewState] =
+    useState<TranscriptReviewState>("idle");
+  const [transcriptReviewError, setTranscriptReviewError] =
+    useState<string | null>(null);
+  const transcriptCorrectionValue =
+    correctedTranscript ||
+    activeJob?.transcriptReview?.detectedText ||
+    "";
 
   const refreshRun = useCallback(async () => {
     setConnection("checking");
@@ -421,6 +444,9 @@ export function ToluvaApp() {
         ...job,
         statusUrl: payload.job.statusUrl,
       };
+      setCorrectedTranscript("");
+      setTranscriptReviewState("idle");
+      setTranscriptReviewError(null);
       setActiveJob(active);
       window.sessionStorage.setItem(
         ACTIVE_JOB_STORAGE_KEY,
@@ -439,6 +465,46 @@ export function ToluvaApp() {
         error instanceof Error
           ? error.message
           : "The durable job could not be created.",
+      );
+    }
+  }
+
+  async function approveTranscript() {
+    if (!activeJob?.transcriptReview) return;
+    setTranscriptReviewState("submitting");
+    setTranscriptReviewError(null);
+    try {
+      const response = await fetch("/api/transcript-review", {
+        body: JSON.stringify({
+          correctedText: transcriptCorrectionValue,
+          jobId: activeJob.jobId,
+          projectId: activeJob.projectId,
+        }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const payload = (await response.json()) as {
+        job?: Omit<ActiveJob, "statusUrl">;
+        message?: string;
+        ok?: boolean;
+      };
+      if (!response.ok || !payload.ok || !payload.job) {
+        throw new Error(payload.message ?? "transcript_review_failed");
+      }
+      setActiveJob({
+        ...payload.job,
+        statusUrl: activeJob.statusUrl,
+      });
+      setTranscriptReviewState("recorded");
+      setNotice(
+        "Transcript correction is immutable in B2. The worker can now resume without repeating transcription.",
+      );
+    } catch (error) {
+      setTranscriptReviewState("error");
+      setTranscriptReviewError(
+        error instanceof Error
+          ? error.message
+          : "The transcript review could not be recorded.",
       );
     }
   }
@@ -647,6 +713,87 @@ export function ToluvaApp() {
                   </strong>
                 )}
               </div>
+              {activeJob.state === "blocked" &&
+                activeJob.transcriptReview && (
+                  <div className="transcript-review-panel">
+                    <div className="transcript-review-heading">
+                      <div>
+                        <span className="meta-label">
+                          PRE-TTS QUALITY GATE
+                        </span>
+                        <strong>Transcript needs human review</strong>
+                      </div>
+                      <span>NO TTS SPEND</span>
+                    </div>
+                    <p>
+                      Toluva stopped before translation and ElevenLabs. The
+                      original provider transcript remains immutable; an
+                      approved correction is stored as a separate B2 record.
+                    </p>
+                    <div className="transcript-review-signals">
+                      <div>
+                        <span>Reason</span>
+                        <strong>
+                          {activeJob.transcriptReview.reasonCodes
+                            .map(readableAction)
+                            .join(", ")}
+                        </strong>
+                      </div>
+                      <div>
+                        <span>Mean confidence</span>
+                        <strong>
+                          {activeJob.transcriptReview.meanWordConfidence ===
+                          null
+                            ? "Unavailable"
+                            : percent(
+                                activeJob.transcriptReview
+                                  .meanWordConfidence,
+                              )}
+                        </strong>
+                      </div>
+                      <div>
+                        <span>Trailing evidence</span>
+                        <strong>
+                          {activeJob.transcriptReview.trailingText}
+                        </strong>
+                      </div>
+                    </div>
+                    <label className="transcript-correction-field">
+                      <span>Correct transcript</span>
+                      <textarea
+                        disabled={
+                          transcriptReviewState === "submitting"
+                        }
+                        onChange={(event) =>
+                          setCorrectedTranscript(event.target.value)
+                        }
+                        rows={3}
+                        value={transcriptCorrectionValue}
+                      />
+                      <small>
+                        Keep “Toluva” exact and remove unresolved trailing
+                        fragments. Approval resumes this same job.
+                      </small>
+                    </label>
+                    {transcriptReviewError && (
+                      <strong className="transcript-review-error">
+                        {transcriptReviewError}
+                      </strong>
+                    )}
+                    <button
+                      className="button button-primary"
+                      disabled={
+                        transcriptReviewState === "submitting" ||
+                        transcriptCorrectionValue.trim().length === 0
+                      }
+                      onClick={() => void approveTranscript()}
+                    >
+                      {transcriptReviewState === "submitting"
+                        ? "Writing immutable review…"
+                        : "Approve correction and resume"}
+                    </button>
+                  </div>
+                )}
               {activeJob.finalAvailable && (
                 <div className="job-output">
                   <div>
