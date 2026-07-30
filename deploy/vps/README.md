@@ -40,6 +40,12 @@ uses one paginated B2 listing snapshot and must not perform per-job `HEAD` or
 `GET` requests. Idle state changes remain in process memory between heartbeat
 publications.
 
+For a source-only maintenance release, when `Dockerfile`, `pyproject.toml`, and
+`uv.lock` are byte-for-byte unchanged from the deployed base,
+`services/pipeline/Dockerfile.source-update` may layer the new checked-in source
+over that verified image. Do not use that path for dependency, operating-system,
+FFmpeg, Python, or model changes; those require a full pinned-image build.
+
 ## Pre-deployment checks
 
 Before changing the host, record the state, main process IDs, start timestamps,

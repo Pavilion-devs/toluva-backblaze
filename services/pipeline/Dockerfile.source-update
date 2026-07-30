@@ -1,0 +1,7 @@
+ARG BASE_IMAGE=toluva-worker:queue-v2-6c78a0e
+FROM ${BASE_IMAGE}
+
+# This maintenance image is valid only when Dockerfile, pyproject.toml, and
+# uv.lock are unchanged from BASE_IMAGE. It replaces application source while
+# preserving the previously verified pinned runtime and model layers.
+COPY --chown=10001:10001 services/pipeline/src /app/services/pipeline/src
