@@ -122,6 +122,8 @@ def build_segment_audio_command(
 ) -> list[str]:
     if len(audio_paths) != len(placements) or not audio_paths:
         raise ValueError("audio paths and placements must be non-empty and aligned")
+    if not math.isfinite(target_seconds) or target_seconds <= 0:
+        raise ValueError("target_seconds must be positive and finite")
     command = [ffmpeg_path, "-hide_banner", "-loglevel", "error"]
     for path in audio_paths:
         command.extend(("-i", str(path)))
@@ -207,6 +209,11 @@ class ToluvaSegmentAudioAssembler(SyncProvider):
             for asset in step.inputs
             if asset.media_type.startswith("audio/")
         )
+        if len(audio_assets) != len(step.inputs):
+            raise ProviderError(
+                "Audio assembly accepts only localized audio inputs.",
+                error_code=ProviderErrorCode.INVALID_INPUT,
+            )
         raw_placements = step.params.get("placements")
         if not isinstance(raw_placements, (list, tuple)):
             raise ProviderError(

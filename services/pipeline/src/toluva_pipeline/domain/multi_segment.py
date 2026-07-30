@@ -64,6 +64,7 @@ class SegmentTranslationArtifact:
     asset_key: str
     manifest_key: str
     stored_manifest_valid: bool
+    stored_manifest_hash_matches: bool
     stored_asset_hash_matches: bool
 
     def __post_init__(self) -> None:
@@ -303,6 +304,7 @@ class MultiSegmentLocalizationEngine:
             )
         if not (
             translation.stored_manifest_valid
+            and translation.stored_manifest_hash_matches
             and translation.stored_asset_hash_matches
         ):
             raise SegmentTranslationError(

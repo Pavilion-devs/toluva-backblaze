@@ -58,6 +58,7 @@ class FakeTranslator:
             stored_manifest_valid=(
                 segment.segment_id != self.invalid_manifest_segment
             ),
+            stored_manifest_hash_matches=True,
             stored_asset_hash_matches=True,
         )
 
@@ -323,3 +324,31 @@ def test_multi_segment_summary_is_immutable_and_replayable() -> None:
     assert loaded["status"] == "ready_for_composition"
     assert loaded["requested_segment_count"] == 3
     assert len(backend.objects) == 1
+
+
+def test_multi_segment_summary_rejects_cross_job_write() -> None:
+    outcome = MultiSegmentLocalizationEngine(
+        translator=FakeTranslator(
+            {
+                "segment-001": "Willkommen bei Toluva.",
+                "segment-002": "Jede Stimme bleibt im Takt.",
+                "segment-003": "Mit Nachweisen veröffentlichen.",
+            }
+        ),
+        generator=FakeSpeechGenerator(
+            {
+                ("segment-001", 1): 0.96,
+                ("segment-002", 1): 0.98,
+                ("segment-003", 1): 0.90,
+            }
+        ),
+        rewriter=MappedRewriter({}),
+    ).run(request())
+    journal = B2MultiSegmentJournal(
+        FakeBackend(),  # type: ignore[arg-type]
+        keys=ToluvaObjectKeys("project-01"),
+        scope=StorageScope("project-01", "different-job", "de-DE"),
+        version="v1",
+    )
+    with pytest.raises(ValueError, match="storage scope"):
+        journal.store(outcome)

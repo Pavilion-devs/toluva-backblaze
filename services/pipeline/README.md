@@ -207,7 +207,7 @@ services/pipeline/.venv/bin/pytest -q \
   services/pipeline/tests/test_audio_assembler.py
 ```
 
-The full service suite currently collects and passes 110 tests. The hosted
+The full service suite currently collects and passes 111 tests. The hosted
 worker remains on the proven single-segment release until the controlled
 multi-segment production source and rewrite policy are approved.
 

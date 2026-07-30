@@ -25,6 +25,7 @@ class B2MultiSegmentJournal:
         version: str,
     ) -> None:
         self._backend = backend
+        self._scope = scope
         self._key = keys.multi_segment_summary(scope, version)
 
     @property
@@ -32,6 +33,13 @@ class B2MultiSegmentJournal:
         return self._key
 
     def store(self, outcome: MultiSegmentLocalizationOutcome) -> str:
+        if (
+            outcome.project_id != self._scope.project_id
+            or outcome.job_id != self._scope.job_id
+        ):
+            raise ValueError(
+                "multi-segment outcome does not match the storage scope"
+            )
         payload = {
             "schema_version": "1.0",
             "record_type": "multi_segment_localization_summary",
