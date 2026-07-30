@@ -34,6 +34,7 @@ export async function POST(request: Request) {
   } catch (error) {
     const code =
       error instanceof Error ? error.message : "job_creation_failed";
+    console.error("toluva_job_creation_failed", { code });
     return Response.json(
       {
         error:

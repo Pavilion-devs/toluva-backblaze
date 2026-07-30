@@ -1,11 +1,10 @@
 import "server-only";
 
 import {
+  createB2ProjectUploader,
   getB2ProjectJson,
   listB2ProjectFiles,
   proxyB2ProjectObject,
-  putB2ProjectJson,
-  putB2ProjectObject,
 } from "./b2-server";
 import {
   JOB_LANGUAGE,
@@ -99,8 +98,9 @@ export async function createQueuedJob(form: FormData): Promise<{
   const authorizationId = "auth-stock-intake-v1";
   const filename = safeFilename(file.name);
 
-  await putB2ProjectObject(sourceKey, bytes, "video/mp4");
-  await putB2ProjectJson(sourceRecordKey, {
+  const uploader = await createB2ProjectUploader();
+  await uploader.putObject(sourceKey, bytes, "video/mp4");
+  await uploader.putJson(sourceRecordKey, {
     b2_key: sourceKey,
     client_reported_duration_seconds: duration,
     development_sample: false,
@@ -134,8 +134,7 @@ export async function createQueuedJob(form: FormData): Promise<{
     target_language: JOB_LANGUAGE,
     version: JOB_VERSION,
   };
-  await putB2ProjectJson(queueRequestKey(projectId, jobId), request);
-  await putB2ProjectJson(
+  await uploader.putJson(
     `${statusPrefix(projectId, jobId)}01-queued.json`,
     {
       created_at: createdAt,
@@ -151,6 +150,9 @@ export async function createQueuedJob(form: FormData): Promise<{
       state: "queued",
     } satisfies JobEvent,
   );
+  // The immutable request is the queue's commit marker. Publish it only after
+  // the source, source record, and initial status event are durable.
+  await uploader.putJson(queueRequestKey(projectId, jobId), request);
 
   return { jobId, projectId, request };
 }

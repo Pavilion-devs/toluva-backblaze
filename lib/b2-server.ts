@@ -38,6 +38,15 @@ export type B2Upload = {
   fileName: string;
 };
 
+export type B2ProjectUploader = {
+  putJson(key: string, value: unknown): Promise<B2Upload>;
+  putObject(
+    key: string,
+    bytes: Uint8Array,
+    contentType: string,
+  ): Promise<B2Upload>;
+};
+
 type B2Context = {
   apiUrl: string;
   authorizationToken: string;
@@ -278,14 +287,16 @@ async function uploadUrl(context: B2Context): Promise<{
   };
 }
 
-export async function putB2ProjectObject(
+async function uploadB2ProjectObject(
+  upload: {
+    authorizationToken: string;
+    uploadUrl: string;
+  },
   key: string,
   bytes: Uint8Array,
   contentType: string,
 ): Promise<B2Upload> {
   const objectKey = safeProjectObjectKey(key);
-  const context = await authorizeB2();
-  const upload = await uploadUrl(context);
   const sha1 = digestHex(
     await crypto.subtle.digest(
       "SHA-1",
@@ -320,15 +331,25 @@ export async function putB2ProjectObject(
   return result;
 }
 
-export async function putB2ProjectJson(
-  key: string,
-  value: unknown,
-): Promise<B2Upload> {
-  return putB2ProjectObject(
-    key,
-    new TextEncoder().encode(`${JSON.stringify(value, null, 2)}\n`),
-    "application/json",
-  );
+export async function createB2ProjectUploader(): Promise<B2ProjectUploader> {
+  const upload = await uploadUrl(await authorizeB2());
+  return {
+    putJson(key: string, value: unknown): Promise<B2Upload> {
+      return uploadB2ProjectObject(
+        upload,
+        key,
+        new TextEncoder().encode(`${JSON.stringify(value, null, 2)}\n`),
+        "application/json",
+      );
+    },
+    putObject(
+      key: string,
+      bytes: Uint8Array,
+      contentType: string,
+    ): Promise<B2Upload> {
+      return uploadB2ProjectObject(upload, key, bytes, contentType);
+    },
+  };
 }
 
 export async function proxyB2Object(
