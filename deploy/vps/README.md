@@ -254,6 +254,33 @@ unrelated service units.
   ElevenLabs, captions, composition, or final-publication stage ran, and no
   command targeted the Dara API or Cloudflare tunnel.
 
+## Controlled transcript-resume proof — July 30, 2026
+
+- The production review panel approved “Welcome to Toluva, One Message, Many
+  Languages.” for the same project
+  `intake-eae21f6090ae4ede90070ce422b91e0d` and job
+  `localize-304ebb7c451e4db1b8000f7763d6ac60`.
+- B2 stores the correction as one immutable human-review record whose original
+  hash matches the preserved transcript-QA record. The final record lists the
+  source, transcription, transcript-quality, and human-review checkpoints as
+  resumed, and the project contains only one transcription manifest.
+- The worker ran Argos locally, passed the voice authorization boundary, and
+  made one 54-character ElevenLabs speech attempt. Its -10.5306% drift was
+  amber, so the engine padded silence and did not make a second TTS call.
+- The completed project contains 41 objects and 14 ordered status events:
+  exactly one human review, speech asset, speech manifest, and final record,
+  plus the four expected Genblaze manifests.
+- The 69,022-byte final MP4 is 4.0 seconds. Its B2 bytes independently matched
+  SHA-256
+  `7eb71111fa8e3004f241865669624b32fad2886c68c8226fb3df831b852284c1`,
+  and the production player loaded it to ready state 4.
+- Subsequent worker ticks remained idle. A later B2 listing stayed at 41
+  objects and one speech manifest, with `14-completed.json` still newest, so
+  replay created no new artifact or provider call.
+- Only the Toluva container and its own logs were inspected. No command
+  targeted the Dara API, Cloudflare tunnel, their units, secrets, paths, or
+  ports.
+
 ## Rollback
 
 Rollback affects Toluva only:

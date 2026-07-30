@@ -1,7 +1,7 @@
 # Toluva — Product, Architecture, and Win Plan
 
 Last updated: July 30, 2026
-Status: controlled production handshake and zero-spend replay verified
+Status: transcript block/resume and zero-spend replay verified
 Submission deadline: August 3, 2026 at 10:00 p.m. WAT  
 Internal submission target: August 3, 2026 at 6:00 p.m. WAT
 
@@ -1111,6 +1111,38 @@ Controlled production handshake completed on July 30:
   its explicit `NO TTS SPEND` state. The correction/approval control remains
   untouched, so the job is durably blocked and cannot spend an ElevenLabs
   credit.
+
+Controlled same-job transcript resume completed on July 30:
+
+- Approved the exact correction “Welcome to Toluva, One Message, Many
+  Languages.” through the production review panel for the same project
+  `intake-eae21f6090ae4ede90070ce422b91e0d` and job
+  `localize-304ebb7c451e4db1b8000f7763d6ac60`.
+- B2 preserves the original provider transcript and its
+  `suspicious_trailing_fragment` decision. A separate immutable human-review
+  record contains the correction, and its original-text hash matches the
+  transcript-QA record.
+- The resumed final record reports `source-ingest`,
+  `transcription-whisper-base-en`, `transcript-quality`, and
+  `transcript-human-review` as reused checkpoints. The project still contains
+  exactly one transcription manifest, proving Whisper was not repeated.
+- Argos translated the reviewed source to “Willkommen bei Toluva, eine
+  Botschaft, viele Sprachen.” The protected term remained exact.
+- ElevenLabs generated 54 characters in exactly one explicit speech attempt.
+  The 4.0-second slot measured -0.421224 seconds / -10.5306% drift, so Toluva
+  classified it amber and padded silence instead of stretching the voice or
+  requesting a second TTS call.
+- The completed namespace contains 41 objects, 14 ordered status events,
+  exactly one human-review record, one speech asset, one speech manifest, one
+  immutable final record, and four Genblaze manifests across transcription,
+  translation, speech, and composition.
+- The final MP4 is 69,022 bytes and exactly 4.0 seconds. Its downloaded B2 bytes
+  matched the recorded SHA-256
+  `7eb71111fa8e3004f241865669624b32fad2886c68c8226fb3df831b852284c1`,
+  and the production player reached ready state 4 with the same duration.
+- Multiple subsequent queue ticks remained idle. A second B2 snapshot stayed at
+  41 objects and one speech manifest, with `14-completed.json` still the newest
+  object. This is the zero-spend replay proof for the human-review resume path.
 
 ## 16. Delivery Schedule
 
