@@ -178,6 +178,43 @@ unrelated service units.
   No command targeted the Dara API, Cloudflare tunnel, their units, or their
   ports.
 
+## Queue-v3 transcript-gate deployment — July 30, 2026
+
+- Transcript-gate source revision `35465e638cbdf6e37a3bc44db37a3761fa150084`
+  passed 100 pipeline tests. The web boundary passed its production build,
+  lint, and all eight rendered route tests.
+- The worker Dockerfile, `pyproject.toml`, and `uv.lock` were unchanged from
+  the verified queue-v2 base. The checked-in source-update Dockerfile therefore
+  layered only the new application source over that pinned runtime; it did not
+  install packages, download models, change Docker, or alter the host.
+- The deployed image is `toluva-worker:queue-v3-35465e6`, with image ID
+  `sha256:79846492e41f10616ab21e7c6ebfb761f726f06c95113653ea0223527179bbc8`
+  and reported size 1,629,125,534 bytes.
+- Secret-safe readiness passed with B2 and ElevenLabs configured, FFmpeg and
+  FFprobe present, both pinned models present, provider spend explicitly
+  enabled only on the dedicated host, and the 60-second poll/heartbeat
+  contract intact.
+- Running the exact production hallucinated tail through the deployed image
+  returned engine `queue-v3`, decision `review_required`, reason
+  `suspicious_trailing_fragment`, mean confidence `0.6908042778571447`, and
+  trailing evidence `Languages which is...`.
+- The systemd service uses the checked-in unit hash
+  `be2f732d116d9ad5db4120a2cf379711a84fb87e6ffb7ff99b45772eab837f0f`.
+  The previous Toluva unit is preserved inside the revision deployment
+  directory for rollback.
+- Final state was `active/running`, container health `healthy`, restart count
+  zero, no published ports, all capabilities dropped, 1.5 CPUs, 2,000 MB RAM,
+  and 256 processes. The root-only environment remained mode `0600`.
+- The B2 heartbeat reported engine `queue-v3`, one replica, and `idle` with a
+  current finite lease. Worker logs contained only an idle tick after cutover.
+- Sites version 11 deployed privately from commit
+  `4ebf5ee61b048f1e11b6001581b13b3ab670bd3e`; its recent production error log
+  was empty.
+- No localization job was created, no media or review evidence was written,
+  and no Whisper, Argos, or ElevenLabs call ran during this deployment. No
+  command targeted the Dara API, Cloudflare tunnel, their units, or their
+  ports.
+
 ## Rollback
 
 Rollback affects Toluva only:

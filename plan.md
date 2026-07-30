@@ -1073,6 +1073,17 @@ Controlled production handshake completed on July 30:
 - That review record wakes the same job immediately, even while its original
   claim is fresh. The resumed worker reuses the transcription checkpoint and
   raw transcript, so review cannot create another STT call or erase evidence.
+- Deployed the hosted transcript-review route and workbench in private Sites
+  version 11. The new production release reported no recent worker errors.
+- Deployed the source-identical engine as the isolated
+  `toluva-worker:queue-v3-35465e6` image. It is healthy with zero restarts,
+  preserved resource and security controls, and publishes a current
+  `queue-v3`/one-replica/idle B2 lease.
+- Ran the exact handshake transcript through the deployed image without B2 or
+  provider access. It reproduced `review_required`,
+  `suspicious_trailing_fragment`, mean confidence `0.6908042778571447`, and
+  trailing evidence `Languages which is...`. The deployment created no job and
+  made no Whisper, Argos, or ElevenLabs call.
 
 ## 16. Delivery Schedule
 
@@ -1732,6 +1743,19 @@ transcript can contain a confident-looking hallucinated tail. Translating that
 tail would waste provider credits and weaken the demo. This boundary turns the
 failure into visible, domain-specific QA, keeps provenance honest, and lets a
 reviewed correction resume the same durable job without repeating STT.
+
+### 2026-07-30 — Reproducible source-only VPS maintenance image
+
+Decision: Permit the checked-in `Dockerfile.source-update` only when the main
+Dockerfile, dependency project, and lockfile are unchanged from the deployed
+verified image. In that case, layer only the new Python source over the pinned
+base and tag it to the gate source revision. Require a full pinned build for
+every dependency, tool, operating-system, or model change.
+
+Reason: The transcript gate changed application source only. Reusing the exact
+verified queue-v2 runtime avoided a multi-gigabyte model transfer and avoided
+installing or changing Docker tooling on the shared VPS, while keeping the
+release reproducible and the dependency boundary explicit.
 
 ## 22. Official References
 

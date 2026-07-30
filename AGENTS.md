@@ -342,6 +342,11 @@ The persistent worker contract is:
   the explicit CPU-only PyTorch source, model revisions, model hashes, and the
   non-root runtime pinned. Do not allow Linux resolution to reintroduce CUDA
   packages unless the architecture deliberately moves to GPU execution.
+- A source-only VPS maintenance build may use
+  `services/pipeline/Dockerfile.source-update` only when the main Dockerfile,
+  `pyproject.toml`, and `uv.lock` are unchanged from the verified base image.
+  Any dependency, tool, operating-system, or model change requires a full
+  pinned-image build.
 - The production worker is the one systemd-managed `toluva-worker` container on
   the selected VPS. It exposes no port and is capped at 1.5 CPUs, 2,000 MB RAM,
   and 256 processes. Preserve the controls in `deploy/vps/`.
