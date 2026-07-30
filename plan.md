@@ -1,7 +1,7 @@
 # Toluva — Product, Architecture, and Win Plan
 
 Last updated: July 30, 2026
-Status: transcript block/resume and zero-spend replay verified
+Status: transcript block/resume proven; multi-segment engine verified locally
 Submission deadline: August 3, 2026 at 10:00 p.m. WAT  
 Internal submission target: August 3, 2026 at 6:00 p.m. WAT
 
@@ -675,6 +675,8 @@ The user sees:
 - [x] Actual duration measurement
 - [x] Drift classification
 - [x] Bounded rewrite/regeneration loop
+- [x] Multi-segment correction and source-timed audio assembly contract
+- [ ] Controlled multi-segment production run
 - [x] Captions
 - [x] Final media composition
 - [x] B2 storage for intermediates and finals
@@ -1143,6 +1145,39 @@ Controlled same-job transcript resume completed on July 30:
 - Multiple subsequent queue ticks remained idle. A second B2 snapshot stayed at
   41 objects and one speech manifest, with `14-completed.json` still the newest
   object. This is the zero-spend replay proof for the human-review resume path.
+
+Multi-segment engine contract completed locally on July 30:
+
+- Added a provider-independent multi-segment localization engine that keeps
+  every source segment, translation asset, speech attempt, timing decision, and
+  selected result distinct. It no longer treats a transcript as one synthetic
+  speech slot.
+- Protected terms are enforced only on the segments that contain them. An
+  unverified translation asset or manifest stops before the first TTS call.
+- Segments run as bounded logical fan-out. Each uses the existing
+  measure/rewrite/regenerate engine and its parent-run lineage. If one segment
+  exhausts its retries, the job stops at human review before translating or
+  synthesizing later segments.
+- Added a Genblaze audio-assembly provider that places each accepted speech
+  asset at its source start time, preserves natural gaps as silence, rejects
+  collisions with the next segment, and produces an exact-source-length WAV
+  master.
+- The assembled master remains an explicit input to the existing
+  video/audio/WebVTT composition provider. A deterministic three-segment proof
+  produced video, audio, and embedded subtitle streams with independently
+  verified Genblaze manifests.
+- Added deterministic coverage for a three-segment run containing one green
+  first attempt, one red-to-green rewrite with parent lineage, and one amber
+  silence-padded result. Separate coverage proves human review prevents all
+  later-segment provider calls.
+- Added append-only B2 key contracts for the aggregate multi-segment summary and
+  the generated localized-audio master. The aggregate summary is immutable and
+  replayable.
+- The complete pipeline suite now collects and passes 110 tests. This phase
+  made no Backblaze write, no provider call, and no ElevenLabs credit spend.
+  The production worker and hosted application remain on the proven
+  single-segment release until a controlled multi-segment source and rewrite
+  policy are approved.
 
 ## 16. Delivery Schedule
 
@@ -1815,6 +1850,20 @@ Reason: The transcript gate changed application source only. Reusing the exact
 verified queue-v2 runtime avoided a multi-gigabyte model transfer and avoided
 installing or changing Docker tooling on the shared VPS, while keeping the
 release reproducible and the dependency boundary explicit.
+
+### 2026-07-30 — Multi-segment spend and assembly boundary
+
+Decision: Treat per-segment translation and speech as bounded logical fan-out,
+but execute them in source order. Stop before every later segment when one
+segment requires human review. Assemble only accepted speech through a
+collision-checked Genblaze audio provider, then pass that exact-length audio
+master into the existing video/audio/caption fan-in.
+
+Reason: Sequential execution keeps billable exposure bounded and leaves every
+attempt inspectable without weakening the logical fan-out model. A separate
+audio-master stage preserves real source gaps, prevents overlapping localized
+speech, and gives B2 and Genblaze a clear lineage boundary between segment
+generation and final composition.
 
 ## 22. Official References
 

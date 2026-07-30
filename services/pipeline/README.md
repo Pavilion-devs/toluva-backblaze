@@ -176,6 +176,41 @@ and a `mov_text` subtitle stream. Its SHA-256 is
 The job now contains 14 B2 objects, with three additional source/transcript
 objects under the project. No new model credits were spent.
 
+## Multi-segment engine contract
+
+The next engine boundary is implemented and verified without a provider call:
+
+- `MultiSegmentLocalizationEngine` preserves the timed transcript as individual
+  source slots.
+- Each slot receives its own verified translation, bounded TTS attempts,
+  objective drift decision, and selected speech lineage.
+- A red attempt may rewrite and regenerate with its parent run attached.
+- A segment that reaches human review stops all later translation and TTS work.
+- `ToluvaSegmentAudioAssembler` places selected speech at the original source
+  timestamps, preserves natural gaps, rejects collisions, and emits an
+  exact-source-length WAV master through Genblaze.
+- The existing compositor then fans source video, the assembled localized-audio
+  master, and WebVTT captions into the final MP4.
+- Aggregate state has append-only B2 key contracts at
+  `qa/multi-segment/{version}.json` and
+  `localized-audio/{version}/genblaze/`.
+
+The deterministic proof uses three segments: a green first attempt, a
+red-to-green corrected segment, and an amber silence-padded segment. It also
+verifies video, audio, and embedded subtitle streams in the final composition.
+
+Run the focused zero-cost checks with:
+
+```bash
+services/pipeline/.venv/bin/pytest -q \
+  services/pipeline/tests/test_multi_segment.py \
+  services/pipeline/tests/test_audio_assembler.py
+```
+
+The full service suite currently collects and passes 110 tests. The hosted
+worker remains on the proven single-segment release until the controlled
+multi-segment production source and rewrite policy are approved.
+
 ## Fixture-free end-to-end proof
 
 The current complete engine proof is:

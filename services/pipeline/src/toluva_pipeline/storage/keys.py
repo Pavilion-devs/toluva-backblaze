@@ -197,6 +197,17 @@ class ToluvaObjectKeys:
             f"{_opaque_id(version, 'version')}-human-review.json"
         )
 
+    def multi_segment_summary(
+        self,
+        scope: StorageScope,
+        version: str = "v1",
+    ) -> str:
+        self._assert_scope(scope)
+        return (
+            f"{scope.job_prefix}/qa/multi-segment/"
+            f"{_opaque_id(version, 'version')}.json"
+        )
+
     def captions(
         self,
         scope: StorageScope,
@@ -207,6 +218,17 @@ class ToluvaObjectKeys:
         return (
             f"{scope.job_prefix}/captions/"
             f"{_opaque_id(version, 'version')}.{_extension(extension)}"
+        )
+
+    def localized_audio_genblaze_prefix(
+        self,
+        scope: StorageScope,
+        version: str = "v1",
+    ) -> str:
+        self._assert_scope(scope)
+        return (
+            f"{scope.job_prefix}/localized-audio/"
+            f"{_opaque_id(version, 'version')}/genblaze"
         )
 
     def composition_genblaze_prefix(
