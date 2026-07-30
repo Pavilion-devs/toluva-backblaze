@@ -315,9 +315,9 @@ Its production contract is deliberately narrow:
 
 - Run exactly one replica. B2 request discovery and the append-only claim event
   are durable but not an atomic compare-and-swap lock.
-- Poll every 60 seconds in production and use bounded backoff after a transient
+- Poll every 120 seconds in production and use bounded backoff after a transient
   queue or heartbeat error.
-- Publish a secret-safe B2 heartbeat every 60 seconds with a finite lease.
+- Publish a secret-safe B2 heartbeat every 120 seconds with a finite lease.
   This heartbeat is the one intentionally mutable runtime record; job events
   and generated assets remain append-only.
 - Refuse startup unless B2, ElevenLabs, FFmpeg, FFprobe, the pinned Whisper

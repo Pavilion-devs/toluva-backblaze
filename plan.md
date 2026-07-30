@@ -1,7 +1,7 @@
 # Toluva — Product, Architecture, and Win Plan
 
-Last updated: July 30, 2026
-Status: queue-v4 timing-approval runtime deployed; controlled run pending
+Last updated: July 31, 2026
+Status: controlled proof staged; B2 free-tier transaction reset pending
 Submission deadline: August 3, 2026 at 10:00 p.m. WAT  
 Internal submission target: August 3, 2026 at 6:00 p.m. WAT
 
@@ -1995,6 +1995,22 @@ segment and could not demonstrate the production multi-segment fan-out,
 source-timed assembly, or segment-specific timing gate. Thirty seconds is long
 enough for the controlled proof while still bounding upload size, inference
 time, and provider exposure.
+
+### 2026-07-31 — Free-tier B2 transaction budget
+
+Decision: Do not continuously poll the worker heartbeat from an idle browser
+tab. Read it on page entry and when the tab becomes active. Poll an active job
+at most once every 20 seconds, allow short private HTTP caching, and cache only
+immutable B2 JSON records in a bounded server-side cache. Run the one worker's
+queue scan and heartbeat publication every 120 seconds.
+
+Reason: The hosted dashboard's 15-second idle heartbeat poll alone could issue
+5,760 Class B reads per open tab per day, exceeding the account's 2,500 free
+daily transactions without processing a job. A 60-second worker queue scan plus
+heartbeat could similarly exceed the Class C allowance over a full day. The
+new visibility-aware web behavior and 120-second worker cadence preserve a
+finite liveness lease, append-only evidence, active-job responsiveness, and
+substantial headroom for the controlled proof and judge traffic.
 
 ## 22. Official References
 

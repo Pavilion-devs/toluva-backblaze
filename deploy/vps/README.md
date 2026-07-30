@@ -36,7 +36,7 @@ contains Python 3.12.13, the locked CPU-only Python environment,
 FFmpeg/FFprobe, the pinned Faster Whisper model, and the pinned Argos
 English-to-German model.
 
-The worker polls and publishes its lease every 60 seconds. An idle queue scan
+The worker polls and publishes its lease every 120 seconds. An idle queue scan
 uses one paginated B2 listing snapshot and must not perform per-job `HEAD` or
 `GET` requests. Idle state changes remain in process memory between heartbeat
 publications.

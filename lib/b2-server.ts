@@ -5,6 +5,10 @@ const VERIFIED_PREFIX = "projects/live-localization-project/";
 const AUTHORIZE_URL =
   "https://api.backblazeb2.com/b2api/v4/b2_authorize_account";
 const AUTH_CACHE_MILLISECONDS = 30 * 60 * 1000;
+const IMMUTABLE_JSON_CACHE_MILLISECONDS = 30 * 60 * 1000;
+const IMMUTABLE_JSON_CACHE_LIMIT = 512;
+const WORKER_HEARTBEAT_KEY =
+  "projects/system-runtime/workers/primary/heartbeat.json";
 
 type B2Allowed = {
   buckets?: Array<{ id: string; name: string }>;
@@ -60,6 +64,11 @@ type B2Context = {
 let cachedAuthorization:
   | { context: B2Context; expiresAt: number }
   | undefined;
+const cachedImmutableJson = new Map<
+  string,
+  { expiresAt: number; value: unknown }
+>();
+const pendingImmutableJson = new Map<string, Promise<unknown>>();
 
 function requireEnvironment(name: string): string {
   const value = process.env[name]?.trim();
@@ -191,13 +200,57 @@ async function fetchB2Object(
 }
 
 export async function getB2Json<T>(key: string): Promise<T> {
-  return getJsonResponse<T>(await fetchB2Object(key));
+  const objectKey = safeVerifiedObjectKey(key);
+  return getCachedJson<T>(
+    objectKey,
+    () => fetchB2Object(objectKey),
+  );
 }
 
 export async function getB2ProjectJson<T>(key: string): Promise<T> {
-  return getJsonResponse<T>(
-    await fetchB2Object(key, { verifiedOnly: false }),
+  const objectKey = safeProjectObjectKey(key);
+  if (objectKey === WORKER_HEARTBEAT_KEY) {
+    return getJsonResponse<T>(
+      await fetchB2Object(objectKey, { verifiedOnly: false }),
+    );
+  }
+  return getCachedJson<T>(
+    objectKey,
+    () => fetchB2Object(objectKey, { verifiedOnly: false }),
   );
+}
+
+async function getCachedJson<T>(
+  key: string,
+  load: () => Promise<Response>,
+): Promise<T> {
+  const now = Date.now();
+  const cached = cachedImmutableJson.get(key);
+  if (cached && cached.expiresAt > now) return cached.value as T;
+  if (cached) cachedImmutableJson.delete(key);
+
+  const pending = pendingImmutableJson.get(key);
+  if (pending) return (await pending) as T;
+
+  const request = (async () =>
+    getJsonResponse<unknown>(await load()))();
+  pendingImmutableJson.set(key, request);
+  try {
+    const value = await request;
+    cachedImmutableJson.set(key, {
+      expiresAt: now + IMMUTABLE_JSON_CACHE_MILLISECONDS,
+      value,
+    });
+    if (cachedImmutableJson.size > IMMUTABLE_JSON_CACHE_LIMIT) {
+      const oldestKey = cachedImmutableJson.keys().next().value;
+      if (typeof oldestKey === "string") {
+        cachedImmutableJson.delete(oldestKey);
+      }
+    }
+    return value as T;
+  } finally {
+    pendingImmutableJson.delete(key);
+  }
 }
 
 async function getJsonResponse<T>(response: Response): Promise<T> {

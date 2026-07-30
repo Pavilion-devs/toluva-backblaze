@@ -77,6 +77,7 @@ type ActiveJob = {
 };
 
 const ACTIVE_JOB_STORAGE_KEY = "toluva-active-b2-job";
+const ACTIVE_JOB_POLL_MILLISECONDS = 20_000;
 
 const languageOptions: Array<{
   code: LanguageCode;
@@ -117,7 +118,6 @@ function dateLabel(value: string) {
 
 async function fetchVerifiedRun(): Promise<VerifiedRun> {
   const response = await fetch("/api/run", {
-    cache: "no-store",
     headers: { Accept: "application/json" },
   });
   const payload = (await response.json()) as {
@@ -156,7 +156,6 @@ async function fetchJobStatus(
   statusUrl: string,
 ): Promise<Omit<ActiveJob, "statusUrl">> {
   const response = await fetch(statusUrl, {
-    cache: "no-store",
     headers: { Accept: "application/json" },
   });
   const payload = (await response.json()) as {
@@ -171,7 +170,6 @@ async function fetchJobStatus(
 
 async function fetchWorkerStatus(): Promise<WorkerConnectionState> {
   const response = await fetch("/api/worker-status", {
-    cache: "no-store",
     headers: { Accept: "application/json" },
   });
   const payload = (await response.json()) as {
@@ -252,6 +250,8 @@ export function ToluvaApp() {
     revisedTranslation?.handle === timingReviewHandle
       ? revisedTranslation.value
       : activeJob?.timingReview?.currentTranslation || "";
+  const activeJobState = activeJob?.state;
+  const activeJobStatusUrl = activeJob?.statusUrl;
 
   const refreshRun = useCallback(async () => {
     setConnection("checking");
@@ -290,6 +290,7 @@ export function ToluvaApp() {
   useEffect(() => {
     let cancelled = false;
     const refreshWorker = () => {
+      if (document.visibilityState !== "visible") return;
       fetchWorkerStatus()
         .then((state) => {
           if (!cancelled) setWorkerConnection(state);
@@ -299,10 +300,12 @@ export function ToluvaApp() {
         });
     };
     refreshWorker();
-    const interval = window.setInterval(refreshWorker, 15000);
+    document.addEventListener("visibilitychange", refreshWorker);
+    window.addEventListener("focus", refreshWorker);
     return () => {
       cancelled = true;
-      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", refreshWorker);
+      window.removeEventListener("focus", refreshWorker);
     };
   }, []);
 
@@ -332,15 +335,16 @@ export function ToluvaApp() {
 
   useEffect(() => {
     if (
-      !activeJob ||
-      ["completed", "failed", "blocked"].includes(activeJob.state)
+      !activeJobState ||
+      !activeJobStatusUrl ||
+      ["completed", "failed", "blocked"].includes(activeJobState)
     ) {
       return;
     }
     const interval = window.setInterval(() => {
-      fetchJobStatus(activeJob.statusUrl)
+      fetchJobStatus(activeJobStatusUrl)
         .then((job) => {
-          setActiveJob({ ...job, statusUrl: activeJob.statusUrl });
+          setActiveJob({ ...job, statusUrl: activeJobStatusUrl });
           setStatusWarning(null);
         })
         .catch(() =>
@@ -348,9 +352,9 @@ export function ToluvaApp() {
             "Live status is temporarily unavailable; the B2 queue record is still durable.",
           ),
         );
-    }, 3000);
+    }, ACTIVE_JOB_POLL_MILLISECONDS);
     return () => window.clearInterval(interval);
-  }, [activeJob]);
+  }, [activeJobState, activeJobStatusUrl]);
 
   function openWorkbench(tab: WorkspaceTab) {
     setWorkspaceTab(tab);

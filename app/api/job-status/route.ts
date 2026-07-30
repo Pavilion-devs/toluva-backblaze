@@ -27,7 +27,10 @@ export async function GET(request: Request) {
         ok: true,
       },
       {
-        headers: { "Cache-Control": "no-store" },
+        headers: {
+          "Cache-Control":
+            "private, max-age=5, stale-while-revalidate=10",
+        },
       },
     );
   } catch {

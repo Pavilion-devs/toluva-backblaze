@@ -10,7 +10,10 @@ export async function GET() {
       worker: await readWorkerAvailability(),
     },
     {
-      headers: { "Cache-Control": "no-store" },
+      headers: {
+        "Cache-Control":
+          "private, max-age=60, stale-while-revalidate=60",
+      },
     },
   );
 }
