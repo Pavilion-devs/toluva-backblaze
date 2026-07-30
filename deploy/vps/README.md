@@ -281,6 +281,39 @@ unrelated service units.
   targeted the Dara API, Cloudflare tunnel, their units, secrets, paths, or
   ports.
 
+## Queue-v4 multi-segment deployment — July 30, 2026
+
+- Source revision `8e21b7e9c53bfa86d0d928944ccf431c9885d684`
+  passed 119 pipeline tests and the production Sites build.
+- The main worker Dockerfile, `pyproject.toml`, and `uv.lock` were unchanged
+  from the deployed queue-v3 base. The source-only Dockerfile replaced only
+  `/app/services/pipeline/src`; it did not install dependencies, download
+  models, change Docker, or alter the host.
+- The deployed image is `toluva-worker:queue-v4-8e21b7e`, image ID
+  `sha256:0fac65bd5114ed41329266e4ddbb029593393cae49837cd2a7b9f2d70e3a4976`,
+  and reported size 1,629,192,452 bytes.
+- Network-disabled imports confirmed queue-v4, multi-segment orchestration,
+  approved translation revisions, and source-timed audio assembly. A second
+  network-disabled readiness run confirmed the scoped credentials, pinned
+  models, FFmpeg/FFprobe, one-replica setting, 60-second poll/heartbeat, and
+  provider-spend gate without calling any service.
+- The checked-in Toluva unit hash is
+  `2cd5b2ab5a2a48c9ba455c893f763d86e12b22c49ff894ccf3ca78d5fc32fc53`.
+  The previous Toluva unit is preserved beneath
+  `/opt/toluva/releases/e265982/` for rollback.
+- Final state was `active/running`, container health `healthy`, restart count
+  zero, no published ports, 1.5 CPUs, 2,000 MB RAM, 256 processes, and root-only
+  environment mode `0600`. Idle use measured approximately 60 MB and 0.01% CPU.
+- The B2 heartbeat reported `queue-v4`, one replica, `idle`, and a finite
+  lease. The deployment created no localization job and made no Whisper,
+  Argos, ElevenLabs, audio-assembly, or composition call.
+- Sites version 12 deployed privately from commit
+  `e26598277dc9718627b48d5e3df0fa252c0c7a02`; recent production error logs
+  were empty.
+- The Dara API, Dara web service, and both Cloudflare tunnel services retained
+  the exact process IDs and unit hashes captured before cutover. Dara's health
+  endpoint stayed green.
+
 ## Rollback
 
 Rollback affects Toluva only:

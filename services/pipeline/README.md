@@ -378,6 +378,8 @@ stores its root-only environment at `/etc/toluva/worker.env`. See
 
 The deployed service uses the immutable tag
 `toluva-worker:queue-v4-8e21b7e`, built from the governed multi-segment source
+revision. Its verified production image ID is
+`sha256:0fac65bd5114ed41329266e4ddbb029593393cae49837cd2a7b9f2d70e3a4976`.
 revision. Its container health, restart count, and heartbeat must be recorded
 in `deploy/vps/README.md` after each deployment. No reverse proxy, DNS record,
 forwarded port, or public worker endpoint is required.

@@ -1,7 +1,7 @@
 # Toluva — Product, Architecture, and Win Plan
 
 Last updated: July 30, 2026
-Status: multi-segment production runtime verified offline; controlled run pending
+Status: queue-v4 multi-segment runtime deployed; controlled run pending
 Submission deadline: August 3, 2026 at 10:00 p.m. WAT  
 Internal submission target: August 3, 2026 at 6:00 p.m. WAT
 
@@ -1207,8 +1207,31 @@ Multi-segment production runtime wired and verified offline on July 30:
   a separate timing gate instead of misreading it as a transcript failure.
 - The full pipeline suite now collects and passes 119 tests, the Sites build
   passes, and this wiring phase made no Backblaze write, provider call, or
-  ElevenLabs credit spend. A source-only worker and Sites deployment are the
-  remaining zero-spend release steps before the controlled production proof.
+  ElevenLabs credit spend.
+
+Queue-v4 production release completed on July 30:
+
+- Deployed source revision `8e21b7e9c53bfa86d0d928944ccf431c9885d684`
+  through the checked-in source-only Docker boundary. The main Dockerfile,
+  `pyproject.toml`, and `uv.lock` were unchanged from the verified queue-v3
+  base, so no dependency, model, media-tool, Python, or operating-system layer
+  changed.
+- The running image is `toluva-worker:queue-v4-8e21b7e`, image ID
+  `sha256:0fac65bd5114ed41329266e4ddbb029593393cae49837cd2a7b9f2d70e3a4976`,
+  size 1,629,192,452 bytes. Network-disabled imports and secret-safe readiness
+  passed before cutover.
+- The one Toluva container is active and healthy with zero restarts, no ports,
+  1.5 CPUs, 2,000 MB RAM, 256 processes, root-only environment mode `0600`,
+  and approximately 60 MB idle memory.
+- The mutable B2 heartbeat reports `queue-v4`, one replica, `idle`, and a
+  finite lease. No localization job, Whisper inference, Argos translation,
+  FFmpeg composition, or ElevenLabs call ran during release.
+- Sites version 12 deployed privately from commit
+  `e26598277dc9718627b48d5e3df0fa252c0c7a02`. Recent production error logs
+  were empty, and timing-blocked jobs now render the correct non-spend state.
+- The Dara API, Dara web service, and both Cloudflare tunnel services retained
+  their exact pre-cutover process IDs and unit hashes. Dara's health endpoint
+  remained green.
 
 ## 16. Delivery Schedule
 
