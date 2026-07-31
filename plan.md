@@ -1,7 +1,7 @@
 # Toluva — Product, Architecture, and Win Plan
 
 Last updated: July 31, 2026
-Status: upload-safe source v11 accepted locally; engine fixes verified; next paid proof awaits explicit spend approval
+Status: engine and site fixes deployed; upload-safe source v11 accepted; next paid proof awaits explicit spend approval
 Submission deadline: August 3, 2026 at 10:00 p.m. WAT  
 Internal submission target: August 3, 2026 at 6:00 p.m. WAT
 
@@ -2074,6 +2074,42 @@ rate and its 104-character translation. Segment 1 therefore pads modest
 silence; segments 2 and 3 are expected to fit green without a retry. The
 rebuild and every validation step made zero ElevenLabs calls. A new paid run
 must not start until a fresh, explicit call/character budget is approved.
+
+### 2026-07-31 — Sentence-aware worker and review-contract release
+
+Decision: Deploy source revision
+`5630c2f3ff2a4a6fd73ac0ed8243f80582d0fa64` as the immutable worker image
+`toluva-worker:queue-v4-5630c2f` and Sites version 15. The source-only image
+path was valid because the main worker Dockerfile, `pyproject.toml`, and
+`uv.lock` were unchanged from the verified queue-v4 base.
+
+Evidence: The complete pipeline suite passed 122 tests; UI lint, the Vinext
+production build, and all 10 rendered-server tests passed. The off-host
+`linux/amd64` image has ID
+`sha256:b56ca6b8c54e857efc3771a5fce6ef387fab5b09b239e62f1caa7960caa00387`
+and size 1,629,167,098 bytes. It passed network-disabled sentence-boundary,
+timing-action, and secret-safe readiness checks locally and again on the VPS.
+The compressed transfer archive matched SHA-256
+`b0204c68a77b611f6a5c5e88e283cb991a2db021d046250a49a285c04bd0b58a`
+on both machines.
+
+The image was built off-host because the VPS had about 2.07 GB available
+memory, below the documented 2.5 GB on-host build threshold. The Toluva-only
+cutover occurred only after the existing worker showed consecutive idle ticks.
+Final state is active, `running healthy`, zero restarts, no published ports,
+1.5 CPUs, 2,000 MB RAM, 256 processes, non-root UID/GID 10001, all
+capabilities dropped, and `no-new-privileges`. The production Toluva UI reports
+`WORKER ONLINE` from the finite B2 heartbeat. No localization job, Whisper,
+Argos, ElevenLabs, or composition stage ran during the release.
+
+The Dara and Cloudflare unit hashes were byte-for-byte unchanged. Both
+Cloudflare process IDs were unchanged. The Dara API and web process IDs changed
+cleanly during the long archive transfer/load window even though no Toluva
+command targeted either unit; systemd reported successful active units with
+zero restart count, and the kernel recorded no OOM entry. The Dara API health
+endpoint returned `status: ok`, and the public web endpoint responded. This
+PID change is preserved as deployment evidence rather than being described as
+an unchanged-service proof.
 
 ## 22. Official References
 

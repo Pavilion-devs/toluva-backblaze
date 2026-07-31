@@ -30,8 +30,9 @@ pre-existing service.
 - `toluva-worker.service` — systemd unit that owns the one container replica
 - `worker.env.example` — secret-free runtime contract
 
-The current deployment image is `toluva-worker:queue-v4-c8d95e1`, built from
-the governed timing-approval source over the verified queue-v4 base. It
+The current deployment image is `toluva-worker:queue-v4-5630c2f`, built from
+the sentence-aware segmentation and timing-review contract source over the
+verified queue-v4 base. It
 contains Python 3.12.13, the locked CPU-only Python environment,
 FFmpeg/FFprobe, the pinned Faster Whisper model, and the pinned Argos
 English-to-German model.
@@ -65,7 +66,7 @@ Installing or starting Toluva must not require a reboot.
 1. Install Docker from the Ubuntu package repository without upgrading or
    restarting unrelated services.
 2. Load the verified `linux/amd64` image and tag it
-   `toluva-worker:queue-v4-c8d95e1`.
+   `toluva-worker:queue-v4-5630c2f`.
 3. Create `/etc/toluva/worker.env` from `worker.env.example`, insert only the
    scoped B2 credential and ElevenLabs key, and set mode `0600`.
 4. Copy `toluva-worker.service` to `/etc/systemd/system/`.
@@ -349,6 +350,45 @@ unrelated service units.
 - The Dara API, Dara web service, and both Cloudflare tunnel services retained
   their exact pre-cutover process IDs and unit hashes. No command targeted,
   edited, or restarted those services.
+
+## Queue-v4 sentence-aware segmentation release — July 31, 2026
+
+- Source revision `5630c2f3ff2a4a6fd73ac0ed8243f80582d0fa64`
+  passed 122 pipeline tests, UI lint, the Vinext production build, and all 10
+  rendered-server tests. Sites version 15 deployed privately from that exact
+  commit.
+- The release aligns the hosted timing-review action with the worker's
+  `retry_expanded` contract and adds a deterministic sentence-ending
+  punctuation plus measured-gap segmentation signal. Whisper timestamp
+  stretching can no longer merge the controlled proof's independent dubbing
+  turns.
+- The main Dockerfile, `pyproject.toml`, and `uv.lock` were unchanged from the
+  verified queue-v4 base. The source-only image was built off-host because the
+  VPS had about 2.07 GB available memory, below the 2.5 GB on-host build
+  threshold.
+- The deployed image is `toluva-worker:queue-v4-5630c2f`, image ID
+  `sha256:b56ca6b8c54e857efc3771a5fce6ef387fab5b09b239e62f1caa7960caa00387`,
+  and size 1,629,167,098 bytes. The compressed transfer archive matched
+  SHA-256
+  `b0204c68a77b611f6a5c5e88e283cb991a2db021d046250a49a285c04bd0b58a`
+  locally and remotely.
+- Network-disabled sentence-boundary, timing-action, and secret-safe readiness
+  checks passed before cutover. The existing worker showed consecutive idle
+  ticks immediately before the Toluva-only restart.
+- Final state is active, `running healthy`, zero restarts, no published ports,
+  1.5 CPUs, 2,000 MB RAM, 256 processes, UID/GID 10001, all capabilities
+  dropped, and `no-new-privileges`. The new unit hash is
+  `924b21dabf3c64dc07a474a2c5b88eed593f127690eb438b76c2027ef118e26c`.
+  The hosted UI reports `WORKER ONLINE` from the finite B2 lease.
+- No localization job, Whisper inference, Argos translation, ElevenLabs call,
+  audio assembly, or composition ran during the release.
+- Dara and Cloudflare unit hashes were unchanged, and both Cloudflare process
+  IDs were unchanged. The Dara API and web process IDs changed cleanly during
+  the long transfer/load window although no command targeted either unit.
+  Systemd reported both active with successful results and zero restart count;
+  the kernel recorded no OOM entry. Dara's API health endpoint returned
+  `status: ok`, and its public web endpoint responded. The process change is
+  recorded here instead of claiming unchanged PIDs.
 
 ## Rollback
 
