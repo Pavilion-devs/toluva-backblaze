@@ -1,7 +1,7 @@
 # Toluva — Product, Architecture, and Win Plan
 
 Last updated: July 31, 2026
-Status: controlled proof staged; B2 free-tier transaction reset pending
+Status: upload-safe source v11 accepted locally; engine fixes verified; next paid proof awaits explicit spend approval
 Submission deadline: August 3, 2026 at 10:00 p.m. WAT  
 Internal submission target: August 3, 2026 at 6:00 p.m. WAT
 
@@ -2011,6 +2011,69 @@ heartbeat could similarly exceed the Class C allowance over a full day. The
 new visibility-aware web behavior and 120-second worker cadence preserve a
 finite liveness lease, append-only evidence, active-job responsiveness, and
 substantial headroom for the controlled proof and judge traffic.
+
+### 2026-07-31 — Controlled three-segment proof and safe stopping point
+
+Decision: Preserve project `intake-c3f634eb72114ba5bb891376f91a6d1f` and job
+`localize-a31d19089caa4e29b2395f82e1215672` as immutable evidence of the
+governed timing loop. Do not approve a second human timing retry for this run.
+Rebuild the source pacing before another paid proof so Whisper's segment slots
+track the spoken durations instead of including large post-sentence gaps.
+
+Evidence: Backblaze access reset successfully and the upload-safe source
+(`986232e0c4925b3b9ef150ed095ad6ac72d290377aefbe24ffca26b3e2e6f8d1`)
+was durably queued. Transcript QA passed with three exact source segments. The
+first 36-character German attempt measured 2.351020 seconds in an 8.25-second
+slot (-71.50%) and stopped before an unapproved retry. One 118-character,
+hash-bound revision was approved:
+
+> Mit einem einzigen Video lässt sich jedes einzelne Team erreichen, ohne für
+> jedes Team ein eigenes Video zu benötigen.
+
+The resumed attempt measured 7.131429 seconds (-13.56%), entered the amber
+band, and was accepted with silence padding. The worker then generated the
+49-character initial translation for segment 2; it measured 3.291429 seconds
+in a 4.23-second slot (-22.19%) and stopped at a new approval gate before call
+4. The run therefore used exactly three ElevenLabs calls and 203 characters,
+staying below the explicit four-call/400-character ceiling. No second retry is
+authorized, no later segment was synthesized, and no final composition exists
+for this job.
+
+Finding: the worker correctly names an expansion action `retry_expanded`, but
+the hosted timing-review validator currently accepts `retry_shorter` and the
+unused name `retry_longer`. This mismatch can make the live review endpoint
+temporarily unavailable while an expansion request is outstanding. Align the
+TypeScript validator with the Python contract and cover the cross-runtime enum
+with a regression test before the next controlled proof.
+
+Resolution: The cross-runtime action contract now uses `retry_expanded` in
+both Python and TypeScript and has a rendered-server regression test. Toluva's
+transcript segmenter now also treats sentence-ending punctuation followed by
+a measured gap as a deterministic boundary. This avoids depending only on
+Whisper's tendency to stretch a final word timestamp across nearby silence.
+
+The accepted upload-safe rebuild is
+`work/videos/toluva-controlled-proof/renders/toluva-controlled-source-v11-upload.mp4`:
+
+- SHA-256: `ca09bbdaf32fc1f9b87c3c41f843bde9a2720c5d6222bb1d3a048f27c0846c00`
+- Size: 433,359 bytes
+- Duration: 12.418 seconds
+- Video: H.264, 1280×720, 30 fps
+- Audio: AAC, 48 kHz stereo; the packet hash matches the locally accepted
+  high-quality master exactly
+- Pinned transcription model revision:
+  `88b03866a4066bb4a97c12258abb82b1e9af0121`
+- Transcript QA: accepted; English probability 1.0, mean word confidence
+  0.9441, minimum word confidence 0.5267, zero low-confidence words
+- Exact segments: 0.00–2.57, 2.57–5.72, and 5.72–12.418 seconds
+
+Against the real German speech already measured in the stopped proof, the new
+slots produce -8.52% drift for segment 1 and +4.49% for segment 2. Segment 3
+forecasts at +3.07% using the observed 15.064 German characters-per-second
+rate and its 104-character translation. Segment 1 therefore pads modest
+silence; segments 2 and 3 are expected to fit green without a retry. The
+rebuild and every validation step made zero ElevenLabs calls. A new paid run
+must not start until a fresh, explicit call/character budget is approved.
 
 ## 22. Official References
 

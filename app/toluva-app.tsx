@@ -789,7 +789,7 @@ export function ToluvaApp() {
                 <span>
                   {activeJob.finalAvailable
                     ? "Final record is available in B2."
-                    : "Polling append-only B2 stage records every 3 seconds."}
+                    : "Polling append-only B2 stage records every 20 seconds."}
                 </span>
                 {(statusWarning ||
                   (activeJob.state === "queued" &&

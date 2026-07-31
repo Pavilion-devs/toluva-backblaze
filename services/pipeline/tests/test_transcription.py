@@ -73,6 +73,27 @@ def test_scribe_words_are_segmented_on_a_real_pause() -> None:
     assert transcript.segments[1].end_seconds == 3.2
 
 
+def test_sentence_ending_with_a_real_gap_is_a_segment_boundary() -> None:
+    payload = scribe_payload()
+    payload["words"][3]["start"] = 1.30  # type: ignore[index]
+    payload["words"][3]["end"] = 1.50  # type: ignore[index]
+    payload["words"][4]["start"] = 1.55  # type: ignore[index]
+    payload["words"][4]["end"] = 2.00  # type: ignore[index]
+
+    transcript = timed_transcript_from_scribe(
+        payload,
+        source_asset_sha256="a" * 64,
+        media_duration_seconds=2.4,
+    )
+
+    assert [segment.text for segment in transcript.segments] == [
+        "Welcome to Toluva.",
+        "One message.",
+    ]
+    assert transcript.segments[0].end_seconds == pytest.approx(1.25)
+    assert transcript.segments[1].start_seconds == pytest.approx(1.25)
+
+
 def test_scribe_words_reject_overlap() -> None:
     payload = scribe_payload()
     payload["words"][1]["start"] = 0.4  # type: ignore[index]

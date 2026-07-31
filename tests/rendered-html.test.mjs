@@ -134,6 +134,23 @@ test("rejects malformed timing approvals before a B2 write", async () => {
   });
 });
 
+test("shares the timing-expansion action name across web and worker runtimes", async () => {
+  const [jobServer, timingDomain] = await Promise.all([
+    readFile(new URL("../lib/job-server.ts", import.meta.url), "utf8"),
+    readFile(
+      new URL(
+        "../services/pipeline/src/toluva_pipeline/domain/timing.py",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  ]);
+
+  assert.match(jobServer, /\["retry_shorter", "retry_expanded"\]/);
+  assert.doesNotMatch(jobServer, /retry_longer/);
+  assert.match(timingDomain, /RETRY_EXPANDED\s*=\s*"retry_expanded"/);
+});
+
 test("rejects malformed completed-job media requests", async () => {
   const response = await render(
     "/api/job-media?project=bad&job=bad&kind=private",

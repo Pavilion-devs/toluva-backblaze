@@ -11,6 +11,8 @@ from toluva_pipeline.domain.transcript import TimedSegment, TimedTranscript
 
 _NO_SPACE_BEFORE = frozenset(".,!?;:%)]}”’")
 _NO_SPACE_AFTER = frozenset("([{“‘")
+_SENTENCE_TERMINATORS = frozenset(".!?…")
+_SENTENCE_CLOSERS = "\"'”’)]}"
 
 
 @dataclass(frozen=True)
@@ -97,6 +99,11 @@ def _join_words(words: list[TranscriptionWord]) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+def _ends_sentence(text: str) -> bool:
+    candidate = text.strip().rstrip(_SENTENCE_CLOSERS)
+    return bool(candidate and candidate[-1] in _SENTENCE_TERMINATORS)
+
+
 def timed_transcript_from_scribe(
     payload: dict[str, Any],
     *,
@@ -104,6 +111,7 @@ def timed_transcript_from_scribe(
     media_duration_seconds: float,
     source: str = "elevenlabs-scribe-v2-live",
     pause_threshold_seconds: float = 0.65,
+    sentence_gap_seconds: float = 0.075,
     max_segment_seconds: float = 8.0,
 ) -> TimedTranscript:
     """Create non-overlapping speech slots from real provider word timestamps."""
@@ -112,7 +120,11 @@ def timed_transcript_from_scribe(
         raise ValueError("source_asset_sha256 must not be empty")
     if not math.isfinite(media_duration_seconds) or media_duration_seconds <= 0:
         raise ValueError("media_duration_seconds must be positive and finite")
-    if pause_threshold_seconds <= 0 or max_segment_seconds <= 0:
+    if (
+        pause_threshold_seconds <= 0
+        or sentence_gap_seconds < 0
+        or max_segment_seconds <= 0
+    ):
         raise ValueError("segmentation thresholds must be positive")
 
     words = parse_scribe_words(payload)
@@ -122,11 +134,17 @@ def timed_transcript_from_scribe(
     groups: list[list[TranscriptionWord]] = []
     current: list[TranscriptionWord] = []
     for word in words:
+        gap_seconds = (
+            word.start_seconds - current[-1].end_seconds if current else 0.0
+        )
         should_split = bool(
             current
             and (
-                word.start_seconds - current[-1].end_seconds
-                >= pause_threshold_seconds
+                gap_seconds >= pause_threshold_seconds
+                or (
+                    gap_seconds >= sentence_gap_seconds
+                    and _ends_sentence(current[-1].text)
+                )
                 or word.speaker_id != current[-1].speaker_id
                 or word.end_seconds - current[0].start_seconds
                 > max_segment_seconds

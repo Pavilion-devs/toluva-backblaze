@@ -416,7 +416,7 @@ async function validateTranslationRevisionRequest(
     request.instruction.trim().length < 1 ||
     request.instruction.length > 1000 ||
     typeof request.requested_action !== "string" ||
-    !["retry_shorter", "retry_longer"].includes(
+    !["retry_shorter", "retry_expanded"].includes(
       request.requested_action,
     ) ||
     typeof request.parent_run_id !== "string" ||
