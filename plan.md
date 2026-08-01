@@ -1,7 +1,7 @@
 # Toluva — Product, Architecture, and Win Plan
 
 Last updated: August 1, 2026
-Status: public read-only judge release deployed; source v11 controlled proof wired into the judge view; final captioned German MP4, three-segment timing evidence, nine manifests, and synthetic-voice disclosure verified; public GitHub source published; `usetoluva.xyz` attached with DNS/SSL activation pending; 3/4 ElevenLabs calls and 189/320 characters used
+Status: public v17 proof remains deployed; product-first UI and bounded live-intake release candidate implemented locally; source v11 controlled proof retained as an example project; final captioned German MP4, three-segment timing evidence, nine manifests, and synthetic-voice disclosure verified; `usetoluva.xyz` attached; no new provider call made during productization
 Submission deadline: August 3, 2026 at 10:00 p.m. WAT  
 Internal submission target: August 3, 2026 at 6:00 p.m. WAT
 
@@ -601,8 +601,8 @@ Language selection principles:
 
 ### Step 1: Open a project
 
-The judge opens a preloaded, entrant-owned sample project. Optional upload is
-available, but the sample guarantees an immediate experience.
+The user lands on live intake and can open a preloaded example project when
+they want an immediate completed experience.
 
 ### Step 2: Review voice authorization
 
@@ -1376,7 +1376,8 @@ Avoid:
 ### Application
 
 - [x] Public URL works without session cookies
-- [x] No authentication required; public judge view is read-only
+- [x] No authentication required for the product and example evidence
+- [ ] Activate bounded public writes only after the matching worker release
 - [x] Sample project loads immediately
 - [x] Media plays without private-cookie dependencies
 - [x] No secrets reach the browser
@@ -1520,8 +1521,9 @@ Resolve during scaffolding or the first spike:
       B2 disclosure record
 - [x] Manifest strategy — canonical sidecar is required first; embedding may be
       added only after final-container compatibility testing
-- [x] Authentication versus public judge-demo mode — public, no-auth,
-      read-only judge view; operator writes remain disabled by default
+- [x] Authentication versus public mode — public and no-auth; write routes
+      remain fail-closed by default and use rights confirmation, disclosure,
+      daily admission slots, and worker-enforced provider budgets when enabled
 
 ## 21. Decision Log
 
@@ -2302,6 +2304,31 @@ the existing Sites project with two redundant apex A records plus OpenAI and
 Cloudflare TXT validation records managed in Vercel DNS. Until registry DNS
 delegation and SSL issuance finish, the public hosting fallback remains
 `https://toluva.asaborodaniel.chatgpt.site`.
+
+### 2026-08-01 — Product-first intake and bounded public admission
+
+Decision: Remove judge-mode framing from the product. The landing page now
+starts at `/workspace/new`; the completed controlled proof remains available as
+an explicitly labeled example project rather than the primary hardcoded flow.
+The new-localization route renders the real MP4 intake even when job creation
+is temporarily paused, successful uploads route directly to their durable job
+page, and B2 continues to hold the authoritative request, status, review, and
+final-media records.
+
+Public-safety contract: every job must confirm source rights and acknowledge
+the disclosed ElevenLabs stock synthetic voice. The web tier reserves one of a
+small number of deterministic UTC-day admission slots (three by default),
+stores that reservation before the source, and publishes the queue request
+last. The request binds a hard ceiling of four TTS calls and 400 generated
+characters. The worker validates the exact admission record and independently
+reserves calls and characters before any provider invocation; restored
+attempts count once by idempotency key. A mismatched slot, missing disclosure,
+lost rights confirmation, or exhausted budget stops before ElevenLabs.
+
+Release boundary: `TOLUVA_ENABLE_LIVE_INTAKE` still fails closed. The public
+flag must not be enabled until this matching worker revision is deployed.
+Productization and its test suite made zero Whisper, Argos, ElevenLabs, FFmpeg,
+or new B2 intake runs.
 
 ## 22. Official References
 

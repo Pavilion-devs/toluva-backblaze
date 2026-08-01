@@ -291,12 +291,16 @@ The verified composition contract is:
   model outputs, not scripted fixtures. It is still not the final
   entrant-owned or licensed demo video.
 - The current controlled 12.419-second source is also engine-validation media,
-  not final entrant voice media. Public judge mode must serve only the muted
+  not final entrant voice media. The example project must serve only the muted
   `public/judge-source-muted.mp4` derivative; do not expose the macOS Samantha
   development narration. The immutable source remains private B2 evidence.
-- Public judge mode is read-only. Keep `TOLUVA_ENABLE_LIVE_INTAKE=false` so
-  anonymous visitors cannot upload, approve records, mutate B2, or spend
-  provider credits.
+- Live intake remains fail-closed behind `TOLUVA_ENABLE_LIVE_INTAKE`. Enable it
+  publicly only after the matching web and worker revisions are deployed. The
+  public lane must require source-rights confirmation and synthetic-voice
+  disclosure, reserve one of a small number of UTC-day admission slots, write
+  the queue request last, and bind every request to at most four TTS calls and
+  400 generated characters. The worker must verify the exact admission record
+  and budget before any provider invocation.
 - Use `https://usetoluva.xyz` as the canonical public submission URL. Keep
   `https://toluva.asaborodaniel.chatgpt.site` documented as the hosting
   fallback until custom-domain DNS and SSL are active.

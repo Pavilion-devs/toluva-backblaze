@@ -4,6 +4,9 @@ export const JOB_VERSION = "live-v1";
 export const MAX_UPLOAD_BYTES = 12 * 1024 * 1024;
 export const MIN_CLIP_SECONDS = 1;
 export const MAX_CLIP_SECONDS = 30;
+export const MAX_TTS_CALLS_PER_JOB = 4;
+export const MAX_TTS_CHARACTERS_PER_JOB = 400;
+export const DEFAULT_PUBLIC_DAILY_JOB_LIMIT = 3;
 
 const PROJECT_ID = /^intake-[a-f0-9]{32}$/;
 const JOB_ID = /^localize-[a-f0-9]{32}$/;
@@ -30,12 +33,20 @@ export type JobEvent = {
 };
 
 export type QueueRequest = {
+  admission_day: string;
+  admission_key: string;
+  admission_slot: number;
   authorization_id: string;
   client_reported_duration_seconds: number;
   created_at: string;
   development_sample: false;
   job_id: string;
   protected_terms: string[];
+  provider_budget: {
+    max_tts_calls: typeof MAX_TTS_CALLS_PER_JOB;
+    max_tts_characters: typeof MAX_TTS_CHARACTERS_PER_JOB;
+  };
+  public_intake: true;
   project_id: string;
   purpose: typeof JOB_PURPOSE;
   record_type: "localization_job_request";
@@ -46,8 +57,10 @@ export type QueueRequest = {
   source_key: string;
   source_sha256: string;
   source_size_bytes: number;
+  source_rights_confirmed: true;
   state: "queued";
   target_language: typeof JOB_LANGUAGE;
+  synthetic_voice_disclosure_acknowledged: true;
   version: typeof JOB_VERSION;
 };
 

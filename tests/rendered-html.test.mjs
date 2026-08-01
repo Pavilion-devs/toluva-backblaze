@@ -29,34 +29,113 @@ async function render(path = "/", init = {}) {
   );
 }
 
-test("server-renders the Toluva product shell", async () => {
+test("server-renders the marketing landing page", async () => {
   const response = await render();
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
 
   const html = await response.text();
   assert.match(html, /<title>Toluva — Governed video localization<\/title>/i);
-  assert.match(html, /One governed German edition/);
-  assert.match(html, /VERIFIED ENGINE RUN/);
-  assert.match(html, /CONTROLLED ENGINE SAMPLE/);
-  assert.match(html, /VOICE CONTROL/);
-  assert.match(html, /Localization pipeline/);
-  assert.match(html, /Verified run workbench/);
+  assert.match(html, /Localize the message/);
+  assert.match(html, /Keep control of the voice/);
+  assert.match(html, /Toluva turns one approved source video/);
   assert.match(html, /Backblaze B2/);
   assert.match(html, /Genblaze/);
-  assert.match(html, /Ein Video kann jedes Team erreichen/);
-  assert.match(html, /3 measured segments/);
+  assert.match(html, /Correction proof/);
+
+  // The primary product action must start a real localization flow.
+  assert.match(html, /href="\/workspace\/new"/);
+  assert.match(html, /Start localizing/);
+  assert.doesNotMatch(html, /Open the verified run/i);
+
+  // Positioning guard: the template this page came from sold a general-purpose
+  // AI video editor, which AGENTS.md forbids Toluva from claiming to be.
+  assert.doesNotMatch(html, /AI video editor/i);
+  assert.doesNotMatch(html, /podcasters/i);
+  assert.doesNotMatch(html, /auto-captions/i);
+  assert.doesNotMatch(html, /Premiere|DaVinci|CapCut|Filmora/);
+  assert.doesNotMatch(html, /Sergio Walker|Jane Jay Jay|Marcus Reid|Elena Fisher/);
+});
+
+test("the landing page loads no third-party assets or runtime scripts", async () => {
+  const html = await (await render()).text();
+
+  // The export shipped a Tailwind Play CDN tag, an unpinned lucide bundle, ~25
+  // unused Google Font links, and images hotlinked from a Supabase bucket we
+  // do not own. None of those may return.
+  assert.doesNotMatch(html, /cdn\.tailwindcss\.com/);
+  assert.doesNotMatch(html, /unpkg\.com/);
+  assert.doesNotMatch(html, /supabase\.co/);
+  assert.doesNotMatch(html, /images\.unsplash\.com/);
+  assert.doesNotMatch(html, /aura-supabase-token-firewall/);
+  assert.doesNotMatch(html, /data-img-fallback-handler/);
+});
+
+test("server-renders the product workspace", async () => {
+  const response = await render("/workspace");
+  assert.equal(response.status, 200);
+
+  const html = await response.text();
+  assert.match(html, /One governed German edition/);
+  assert.match(html, /Verified engine run/);
+  assert.match(html, /Controlled engine sample/);
+  assert.match(html, /Voice control/);
+  assert.match(html, /Localization pipeline/);
+  assert.match(html, /Verified run workbench/);
+  assert.match(html, /Manifests/);
   assert.match(html, /1 bounded tempo-fit/);
-  assert.match(html, /SIGNATURE CORRECTION PROOF/);
-  assert.match(html, /Measured red → approved rewrite → verified green/);
-  assert.match(html, /READ-ONLY JUDGE MODE/);
-  assert.match(html, /MANIFESTS/);
-  assert.doesNotMatch(html, /New localization/);
+  assert.match(html, /New localization/);
+  assert.match(html, /Example project/);
+  assert.match(html, /Backblaze B2/);
+  assert.match(html, /Genblaze/);
   assert.doesNotMatch(html, /Leadership onboarding/);
   assert.doesNotMatch(html, /DEVELOPMENT SAMPLE/);
   assert.doesNotMatch(html, /prepared demonstration data/i);
   assert.doesNotMatch(html, /codex-preview/);
   assert.doesNotMatch(html, /Your site is taking shape/);
+  assert.doesNotMatch(html, /judge mode/i);
+});
+
+test("server-renders the timing correction proof on its own route", async () => {
+  const response = await render("/workspace/timing");
+  assert.equal(response.status, 200);
+
+  const html = await response.text();
+  assert.match(html, /Signature correction proof/);
+  assert.match(html, /Measured red → approved rewrite → verified green/);
+  assert.match(html, /3 measured segments/);
+  assert.match(html, /Ein Video kann jedes Team erreichen/);
+});
+
+test("every workspace route server-renders", async () => {
+  const routes = [
+    "/workspace",
+    "/workspace/new",
+    "/workspace/runs",
+    "/workspace/editions",
+    "/workspace/timing",
+    "/workspace/voice",
+    "/workspace/assets",
+    "/workspace/provenance",
+  ];
+
+  for (const route of routes) {
+    const response = await render(route);
+    assert.equal(response.status, 200, `${route} did not render`);
+    const html = await response.text();
+    assert.doesNotMatch(html, /Application error/i, `${route} rendered an error`);
+  }
+});
+
+test("new localization renders the real bounded upload workflow", async () => {
+  const html = await (await render("/workspace/new")).text();
+  assert.match(html, /Drop an MP4 here/i);
+  assert.match(html, /Queue in Backblaze B2/);
+  assert.match(html, /I have the right to upload this clip/i);
+  assert.match(html, /disclosed ElevenLabs stock synthetic voice/i);
+  assert.match(html, /Bounded public capacity/i);
+  assert.match(html, /generated characters per job/i);
+  assert.doesNotMatch(html, /judge mode/i);
 });
 
 test("fails closed when runtime B2 credentials are unavailable", async () => {
@@ -94,13 +173,13 @@ test("rejects media kinds outside the verified allowlist", async () => {
   });
 });
 
-test("withholds the system-voice source audio in public judge mode", async () => {
+test("withholds the example project's system-voice source audio", async () => {
   const response = await render("/api/media?kind=source");
   assert.equal(response.status, 403);
   assert.deepEqual(await response.json(), {
     error: "source_audio_withheld",
     message:
-      "Public judge mode serves an audio-free source preview while preserving the immutable source master privately in B2.",
+      "The example project serves an audio-free source preview while preserving its immutable source master privately in B2.",
   });
 });
 
@@ -125,11 +204,11 @@ test("rejects malformed transcript approvals before a B2 write", async () => {
     headers: { "content-type": "application/json" },
     method: "POST",
   });
-  assert.equal(response.status, 403);
+  assert.equal(response.status, 400);
   assert.deepEqual(await response.json(), {
-    error: "judge_mode_read_only",
+    error: "invalid_job_handle",
     message:
-      "Public judge mode is read-only so anonymous visitors cannot spend provider credits or mutate B2 evidence.",
+      "The transcript correction did not meet the review contract.",
     ok: false,
   });
 });
@@ -144,11 +223,11 @@ test("rejects malformed timing approvals before a B2 write", async () => {
     headers: { "content-type": "application/json" },
     method: "POST",
   });
-  assert.equal(response.status, 403);
+  assert.equal(response.status, 400);
   assert.deepEqual(await response.json(), {
-    error: "judge_mode_read_only",
+    error: "invalid_job_handle",
     message:
-      "Public judge mode is read-only so anonymous visitors cannot spend provider credits or mutate B2 evidence.",
+      "The wording did not meet the timing-review contract.",
     ok: false,
   });
 });
@@ -201,14 +280,25 @@ test("rejects malformed completed-job media requests", async () => {
   });
 });
 
-test("removes starter-only assets and metadata", async () => {
-  const [page, layout, packageJson] = await Promise.all([
-    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+test("removes starter-only assets and preserves bounded intake wiring", async () => {
+  const [workspaceLayout, newPage, jobContract, layout, packageJson] =
+    await Promise.all([
+    readFile(new URL("../app/(workspace)/layout.tsx", import.meta.url), "utf8"),
+    readFile(
+      new URL("../app/(workspace)/workspace/new/page.tsx", import.meta.url),
+      "utf8",
+    ),
+    readFile(new URL("../lib/job-contract.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../package.json", import.meta.url), "utf8"),
   ]);
 
-  assert.match(page, /<ToluvaApp liveIntakeEnabled=\{liveIntakeEnabled\(\)\} \/>/);
+  assert.match(workspaceLayout, /liveIntakeEnabled=\{liveIntakeEnabled\(\)\}/);
+  assert.match(workspaceLayout, /publicDailyJobLimit=\{publicDailyJobLimit\(\)\}/);
+  assert.match(newPage, /sourceRightsConfirmed/);
+  assert.match(newPage, /syntheticVoiceDisclosureAcknowledged/);
+  assert.match(jobContract, /MAX_TTS_CALLS_PER_JOB = 4/);
+  assert.match(jobContract, /MAX_TTS_CHARACTERS_PER_JOB = 400/);
   assert.match(layout, /Toluva — Governed video localization/);
   assert.match(layout, /og\.png/);
   assert.doesNotMatch(layout, /codex-preview|Starter Project/);

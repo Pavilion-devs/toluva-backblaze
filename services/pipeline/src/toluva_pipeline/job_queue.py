@@ -34,9 +34,16 @@ REVISION_REQUEST_PATTERN = re.compile(
     r"(?P<segment>[A-Za-z0-9][A-Za-z0-9_-]{0,127})/"
     r"revision-requests/attempt-(?P<attempt>[1-9][0-9]*)\.json$"
 )
+ADMISSION_PATTERN = re.compile(
+    r"^projects/system-runtime/intake-admissions/"
+    r"(?P<day>[0-9]{4}-[0-9]{2}-[0-9]{2})/"
+    r"slot-(?P<slot>[0-9]{3})\.json$"
+)
 JOB_VERSION = "live-v1"
 TARGET_LANGUAGE = "de-DE"
 PURPOSE = "internal-training"
+MAX_TTS_CALLS_PER_JOB = 4
+MAX_TTS_CHARACTERS_PER_JOB = 400
 
 STAGES: dict[str, tuple[int, str, str]] = {
     "claimed": (2, "running", "Claimed by the Python worker"),
@@ -64,12 +71,17 @@ def _json_bytes(payload: dict[str, object]) -> bytes:
 
 @dataclass(frozen=True)
 class QueuedJobRequest:
+    admission_day: str
+    admission_key: str
+    admission_slot: int
     authorization_id: str
     created_at: str
     development_sample: bool
     job_id: str
     project_id: str
     protected_terms: tuple[str, ...]
+    max_tts_calls: int
+    max_tts_characters: int
     purpose: str
     source_asset_id: str
     source_key: str
@@ -100,6 +112,14 @@ class QueuedJobRequest:
             raise ValueError("Queued engine version is unsupported")
         if payload.get("state") != "queued":
             raise ValueError("Queued job request is not in the queued state")
+        if payload.get("public_intake") is not True:
+            raise ValueError("Queued job request is outside public intake")
+        if payload.get("source_rights_confirmed") is not True:
+            raise ValueError("Queued source rights were not confirmed")
+        if payload.get("synthetic_voice_disclosure_acknowledged") is not True:
+            raise ValueError("Queued synthetic voice disclosure was not acknowledged")
+        if str(payload.get("authorization_id", "")) != "auth-stock-intake-v1":
+            raise ValueError("Queued authorization is unsupported")
         protected_terms = tuple(
             str(value) for value in payload.get("protected_terms", ())
         )
@@ -111,16 +131,43 @@ class QueuedJobRequest:
         source_size_bytes = int(payload.get("source_size_bytes", 0))
         if source_size_bytes < 1 or source_size_bytes > 12 * 1024 * 1024:
             raise ValueError("Queued source size is outside the intake limit")
+        provider_budget = payload.get("provider_budget")
+        if not isinstance(provider_budget, dict):
+            raise ValueError("Queued provider budget is missing")
+        max_tts_calls = int(provider_budget.get("max_tts_calls", 0))
+        max_tts_characters = int(
+            provider_budget.get("max_tts_characters", 0)
+        )
+        if not 1 <= max_tts_calls <= MAX_TTS_CALLS_PER_JOB:
+            raise ValueError("Queued TTS call budget is outside the safe limit")
+        if not 1 <= max_tts_characters <= MAX_TTS_CHARACTERS_PER_JOB:
+            raise ValueError("Queued TTS character budget is outside the safe limit")
+        admission_day = str(payload.get("admission_day", ""))
+        admission_key = str(payload.get("admission_key", ""))
+        admission_slot = int(payload.get("admission_slot", 0))
+        admission_match = ADMISSION_PATTERN.fullmatch(admission_key)
+        if (
+            admission_match is None
+            or admission_match.group("day") != admission_day
+            or int(admission_match.group("slot")) != admission_slot
+            or not 1 <= admission_slot <= 25
+        ):
+            raise ValueError("Queued public admission is invalid")
         expected_request_key = keys.queue_request(scope)
         if not QUEUE_PATTERN.fullmatch(expected_request_key):
             raise ValueError("Queued job handle is outside the intake namespace")
         return cls(
+            admission_day=admission_day,
+            admission_key=admission_key,
+            admission_slot=admission_slot,
             authorization_id=str(payload.get("authorization_id", "")),
             created_at=str(payload.get("created_at", "")),
             development_sample=bool(payload.get("development_sample", False)),
             job_id=job_id,
             project_id=project_id,
             protected_terms=protected_terms,
+            max_tts_calls=max_tts_calls,
+            max_tts_characters=max_tts_characters,
             purpose=PURPOSE,
             source_asset_id=source_asset_id,
             source_key=source_key,
@@ -129,6 +176,29 @@ class QueuedJobRequest:
             target_language=TARGET_LANGUAGE,
             version=JOB_VERSION,
         )
+
+
+def _validate_public_admission(
+    request: QueuedJobRequest,
+    payload: object,
+) -> None:
+    if not isinstance(payload, dict):
+        raise ValueError("Public intake admission must be a JSON object")
+    expected_budget = {
+        "max_tts_calls": request.max_tts_calls,
+        "max_tts_characters": request.max_tts_characters,
+    }
+    if (
+        payload.get("record_type") != "public_intake_admission"
+        or payload.get("schema_version") != "1.0"
+        or payload.get("state") != "reserved"
+        or payload.get("project_id") != request.project_id
+        or payload.get("job_id") != request.job_id
+        or payload.get("admission_day") != request.admission_day
+        or payload.get("admission_slot") != request.admission_slot
+        or payload.get("provider_budget") != expected_budget
+    ):
+        raise ValueError("Public intake admission does not match the queued job")
 
 
 class JobStatusWriter:
@@ -270,6 +340,10 @@ def process_queued_job(
         project_id=project_id,
         job_id=job_id,
     )
+    _validate_public_admission(
+        request,
+        json.loads(storage.backend.get(request.admission_key)),
+    )
     source_bytes = storage.backend.get(request.source_key)
     if len(source_bytes) != request.source_size_bytes:
         raise ValueError("Queued source byte count changed")
@@ -291,7 +365,9 @@ def process_queued_job(
             protected_terms=request.protected_terms,
             create_development_source_if_missing=False,
             development_sample=request.development_sample,
-            source_kind="user-uploaded-engine-test",
+            source_kind="user-uploaded-public-intake",
+            max_tts_calls=request.max_tts_calls,
+            max_tts_characters=request.max_tts_characters,
             version=request.version,
             on_progress=status.emit,
         )

@@ -4,13 +4,17 @@ import {
   createB2ProjectUploader,
   getB2ProjectJson,
   listB2ProjectFiles,
+  listB2ProjectFilesStrict,
   proxyB2ProjectObject,
 } from "./b2-server";
 import {
+  DEFAULT_PUBLIC_DAILY_JOB_LIMIT,
   JOB_LANGUAGE,
   JOB_PURPOSE,
   JOB_VERSION,
   MAX_CLIP_SECONDS,
+  MAX_TTS_CALLS_PER_JOB,
+  MAX_TTS_CHARACTERS_PER_JOB,
   MAX_UPLOAD_BYTES,
   MIN_CLIP_SECONDS,
   finalRecordKey,
@@ -175,7 +179,33 @@ function parseDuration(value: FormDataEntryValue | null): number {
   return parsed;
 }
 
-export async function createQueuedJob(form: FormData): Promise<{
+function confirmed(value: FormDataEntryValue | null): boolean {
+  return value === "true";
+}
+
+function utcDay(value: Date): string {
+  return value.toISOString().slice(0, 10);
+}
+
+function admissionPrefix(day: string): string {
+  return `projects/system-runtime/intake-admissions/${day}/`;
+}
+
+function admissionKey(day: string, slot: number): string {
+  return `${admissionPrefix(day)}slot-${String(slot).padStart(3, "0")}.json`;
+}
+
+function hasMp4Signature(bytes: Uint8Array): boolean {
+  return (
+    bytes.byteLength >= 12 &&
+    new TextDecoder("ascii").decode(bytes.slice(4, 8)) === "ftyp"
+  );
+}
+
+export async function createQueuedJob(
+  form: FormData,
+  options: { dailyJobLimit?: number } = {},
+): Promise<{
   jobId: string;
   projectId: string;
   request: QueueRequest;
@@ -192,22 +222,66 @@ export async function createQueuedJob(form: FormData): Promise<{
   if (form.get("purpose") !== JOB_PURPOSE) {
     throw new Error("authorization_wrong_purpose");
   }
+  if (!confirmed(form.get("sourceRightsConfirmed"))) {
+    throw new Error("source_rights_confirmation_required");
+  }
+  if (!confirmed(form.get("syntheticVoiceDisclosureAcknowledged"))) {
+    throw new Error("synthetic_voice_disclosure_required");
+  }
 
   const duration = parseDuration(form.get("durationSeconds"));
+  const dailyJobLimit =
+    options.dailyJobLimit ?? DEFAULT_PUBLIC_DAILY_JOB_LIMIT;
+  if (
+    !Number.isSafeInteger(dailyJobLimit) ||
+    dailyJobLimit < 1 ||
+    dailyJobLimit > 25
+  ) {
+    throw new Error("public_daily_job_limit_invalid");
+  }
+  const now = new Date();
+  const createdAt = now.toISOString();
+  const day = utcDay(now);
   const projectId = compactUuid("intake");
   const jobId = compactUuid("localize");
   const sourceAssetId = compactUuid("source");
   const bytes = new Uint8Array(await file.arrayBuffer());
+  if (!hasMp4Signature(bytes)) throw new Error("source_must_be_mp4");
   const sourceSha256 = hex(await crypto.subtle.digest("SHA-256", bytes));
   const sourceKey =
     `projects/${projectId}/source/master/${sourceAssetId}.mp4`;
   const sourceRecordKey =
     `projects/${projectId}/source/records/${sourceAssetId}.json`;
-  const createdAt = new Date().toISOString();
   const authorizationId = "auth-stock-intake-v1";
   const filename = safeFilename(file.name);
 
+  const occupiedSlots = new Set(
+    (await listB2ProjectFilesStrict(admissionPrefix(day))).map(
+      ({ fileName }) => fileName,
+    ),
+  );
+  const slot = Array.from(
+    { length: dailyJobLimit },
+    (_, index) => index + 1,
+  ).find((candidate) => !occupiedSlots.has(admissionKey(day, candidate)));
+  if (!slot) throw new Error("public_daily_job_limit_reached");
+  const reservedAdmissionKey = admissionKey(day, slot);
+
   const uploader = await createB2ProjectUploader();
+  await uploader.putJson(reservedAdmissionKey, {
+    admitted_at: createdAt,
+    admission_day: day,
+    admission_slot: slot,
+    job_id: jobId,
+    project_id: projectId,
+    provider_budget: {
+      max_tts_calls: MAX_TTS_CALLS_PER_JOB,
+      max_tts_characters: MAX_TTS_CHARACTERS_PER_JOB,
+    },
+    record_type: "public_intake_admission",
+    schema_version: "1.0",
+    state: "reserved",
+  });
   await uploader.putObject(sourceKey, bytes, "video/mp4");
   await uploader.putJson(sourceRecordKey, {
     b2_key: sourceKey,
@@ -219,16 +293,26 @@ export async function createQueuedJob(form: FormData): Promise<{
     schema_version: "1.0",
     sha256: sourceSha256,
     size_bytes: bytes.byteLength,
-    source_kind: "user-uploaded-engine-test",
+    source_kind: "user-uploaded-public-intake",
+    source_rights_confirmed: true,
+    synthetic_voice_disclosure_acknowledged: true,
   });
 
   const request: QueueRequest = {
+    admission_day: day,
+    admission_key: reservedAdmissionKey,
+    admission_slot: slot,
     authorization_id: authorizationId,
     client_reported_duration_seconds: duration,
     created_at: createdAt,
     development_sample: false,
     job_id: jobId,
     protected_terms: ["Toluva"],
+    provider_budget: {
+      max_tts_calls: MAX_TTS_CALLS_PER_JOB,
+      max_tts_characters: MAX_TTS_CHARACTERS_PER_JOB,
+    },
+    public_intake: true,
     project_id: projectId,
     purpose: JOB_PURPOSE,
     record_type: "localization_job_request",
@@ -239,8 +323,10 @@ export async function createQueuedJob(form: FormData): Promise<{
     source_key: sourceKey,
     source_sha256: sourceSha256,
     source_size_bytes: bytes.byteLength,
+    source_rights_confirmed: true,
     state: "queued",
     target_language: JOB_LANGUAGE,
+    synthetic_voice_disclosure_acknowledged: true,
     version: JOB_VERSION,
   };
   await uploader.putJson(

@@ -2,7 +2,11 @@ import {
   approveTranscriptCorrection,
 } from "../../../lib/job-server";
 import {
-  judgeReadOnlyResponse,
+  isIntakeProjectId,
+  isLocalizationJobId,
+} from "../../../lib/job-contract";
+import {
+  intakeUnavailableResponse,
   liveIntakeEnabled,
 } from "../../../lib/runtime-mode";
 
@@ -20,13 +24,21 @@ export const dynamic = "force-dynamic";
 export const runtime = "edge";
 
 export async function POST(request: Request) {
-  if (!liveIntakeEnabled()) return judgeReadOnlyResponse();
   try {
     const input = (await request.json()) as {
       correctedText?: unknown;
       jobId?: unknown;
       projectId?: unknown;
     };
+    if (
+      typeof input.projectId !== "string" ||
+      typeof input.jobId !== "string" ||
+      !isIntakeProjectId(input.projectId) ||
+      !isLocalizationJobId(input.jobId)
+    ) {
+      throw new Error("invalid_job_handle");
+    }
+    if (!liveIntakeEnabled()) return intakeUnavailableResponse();
     const job = await approveTranscriptCorrection(input);
     return Response.json(
       { job, ok: true },

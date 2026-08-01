@@ -665,6 +665,8 @@ def run_live_end_to_end(
     create_development_source_if_missing: bool = True,
     development_sample: bool = True,
     source_kind: str = "locally-generated-development-sample",
+    max_tts_calls: int | None = None,
+    max_tts_characters: int | None = None,
     version: str = E2E_VERSION,
     on_progress: ProgressCallback | None = None,
 ) -> LiveEndToEndReport:
@@ -1110,6 +1112,8 @@ def run_live_end_to_end(
             language=E2E_LANGUAGE,
             language_code="de",
             purpose="internal-training",
+            max_tts_calls=max_tts_calls,
+            max_tts_characters=max_tts_characters,
         )
         completed_timings: dict[str, TimingCorrectionOutcome] = {}
         prior_attempts: dict[str, tuple[CorrectionAttempt, ...]] = {}
@@ -1126,7 +1130,7 @@ def run_live_end_to_end(
             )
             prior_attempts[segment.segment_id] = durable_attempts
             for attempt in durable_attempts:
-                generator.restore_parent(attempt.speech)
+                generator.restore_attempt(attempt)
 
         progress(
             "translating",

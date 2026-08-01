@@ -10,19 +10,22 @@ The submitted deployment proves one complete English-to-German production
 lane. It does not claim universal language support, perfect lip sync, or
 automatic legal compliance.
 
-## Live judge experience
+## Product experience
 
 - Application: <https://usetoluva.xyz>
+- Start a localization: <https://usetoluva.xyz/workspace/new>
+- Completed example project: <https://usetoluva.xyz/workspace>
 - Hosting fallback while custom-domain DNS/SSL propagates:
   <https://toluva.asaborodaniel.chatgpt.site>
 - Source: <https://github.com/Pavilion-devs/toluva-backblaze>
-- Public mode is intentionally read-only. Judges can inspect the verified run,
-  compare the source visual with the German edition, play both timing attempts,
-  test an allowed or blocked voice-policy request, inspect B2 assets, and review
-  Genblaze lineage.
-- Anonymous visitors cannot create jobs, approve review records, mutate B2, or
-  spend provider credits.
-- The public English source preview is audio-free. The immutable engine source
+- Live intake is feature-flagged and fails closed. When enabled with the
+  matching worker revision, each job must confirm source rights and the
+  synthetic-voice disclosure, reserve one of three default UTC-day admission
+  slots, and stay within four TTS calls and 400 generated characters.
+- Successful uploads write the source and immutable queue request to B2, then
+  route directly to a durable job page with stage events and review gates.
+- The example project's English source preview is audio-free. Its immutable
+  engine source
   used a locally generated development voice and remains private B2 evidence;
   see [`docs/MEDIA_AND_RIGHTS.md`](docs/MEDIA_AND_RIGHTS.md).
 
@@ -64,7 +67,7 @@ checks stored media hashes before describing bytes as verified.
 
 ```mermaid
 flowchart LR
-    UI["Public judge app"] --> API["Server-only bridge"]
+    UI["Toluva web product"] --> API["Server-only bridge"]
     API --> B2["Backblaze B2 system of record"]
     B2 --> WORKER["Single durable Python worker"]
     WORKER --> STT["Faster Whisper"]
@@ -92,9 +95,23 @@ flowchart LR
 Pinned Genblaze packages are `genblaze-core==0.3.8`,
 `genblaze-s3==0.3.6`, and `genblaze-elevenlabs==0.3.3`.
 
+## Interface map
+
+- `/` — overview page describing the governed lane
+- `/workspace` — completed example project, media compare, and voice control
+- `/workspace/new` — bounded live intake and rights/disclosure confirmation
+- `/workspace/runs` — run history and durable job detail
+- `/workspace/editions` — language editions and source/German compare
+- `/workspace/timing` — drift bands and the red-to-green correction proof
+- `/workspace/voice` — authorization record and the allow/block policy tester
+- `/workspace/assets` — job-scoped Backblaze B2 objects
+- `/workspace/provenance` — canonical Genblaze manifests and hashes
+
 ## Repository map
 
-- `app/` — public judge interface and narrow server routes
+- `app/(marketing)/` — public overview page
+- `app/(workspace)/` — product workspace shell and routes
+- `app/api/` — narrow server routes
 - `lib/` — B2 bridge, verified-run loader, job contracts, and policy evaluation
 - `services/pipeline/` — FastAPI/Genblaze pipeline, worker, providers, storage,
   domain policy, and tests
@@ -120,9 +137,11 @@ The app works in verified-snapshot mode without credentials. To read live B2
 records, copy `.env.example` to `.env.local` and provide a bucket-scoped key.
 Never commit `.env.local`.
 
-The public deployment must keep `TOLUVA_ENABLE_LIVE_INTAKE=false`. Enable live
-intake only in a private operator environment after explicitly authorizing
-provider spend.
+`TOLUVA_ENABLE_LIVE_INTAKE` defaults to `false`. Enable it only after the
+matching web and worker revisions are deployed. The default public capacity is
+three jobs per UTC day and can be reduced with
+`TOLUVA_PUBLIC_DAILY_JOB_LIMIT`; the worker independently enforces the per-job
+four-call/400-character ceiling before ElevenLabs.
 
 ## Pipeline setup and verification
 
@@ -144,7 +163,11 @@ worker contract.
 ## Safety and integrity boundaries
 
 - B2 and provider credentials never reach browser code.
-- Public write routes fail closed before upload, approval, or provider spend.
+- Write routes fail closed while live intake is disabled.
+- Every public request binds source-rights confirmation, synthetic-voice
+  disclosure, a UTC-day admission slot, and a worker-verified provider budget.
+- The queue request remains the last write and therefore the worker's claimable
+  commit marker.
 - Media proxies accept fixed kinds or exact opaque job handles, never arbitrary
   B2 keys.
 - Authorization evaluates language, purpose, validity, revocation, and the

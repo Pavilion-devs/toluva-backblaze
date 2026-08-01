@@ -7,6 +7,7 @@ import pytest
 from toluva_pipeline.job_queue import (
     JobStatusWriter,
     QueuedJobRequest,
+    _validate_public_admission,
     find_next_runnable_job,
 )
 from toluva_pipeline.storage.keys import StorageScope, ToluvaObjectKeys
@@ -55,6 +56,12 @@ def request_payload() -> dict[str, object]:
     job_id = f"localize-{'b' * 32}"
     source_id = f"source-{'c' * 32}"
     return {
+        "admission_day": "2026-08-01",
+        "admission_key": (
+            "projects/system-runtime/intake-admissions/2026-08-01/"
+            "slot-001.json"
+        ),
+        "admission_slot": 1,
         "schema_version": "1.0",
         "record_type": "localization_job_request",
         "project_id": project_id,
@@ -69,6 +76,13 @@ def request_payload() -> dict[str, object]:
         "purpose": "internal-training",
         "authorization_id": "auth-stock-intake-v1",
         "protected_terms": ["Toluva"],
+        "provider_budget": {
+            "max_tts_calls": 4,
+            "max_tts_characters": 400,
+        },
+        "public_intake": True,
+        "source_rights_confirmed": True,
+        "synthetic_voice_disclosure_acknowledged": True,
         "development_sample": False,
         "version": "live-v1",
         "state": "queued",
@@ -89,6 +103,8 @@ def test_queue_request_accepts_only_the_exact_governed_contract() -> None:
         ("target_language", "fr-FR"),
         ("purpose", "public-marketing"),
         ("protected_terms", []),
+        ("source_rights_confirmed", False),
+        ("synthetic_voice_disclosure_acknowledged", False),
         ("source_sha256", "invalid"),
     ],
 )
@@ -100,6 +116,28 @@ def test_queue_request_rejects_contract_changes(
     payload[field] = value
     with pytest.raises(ValueError):
         QueuedJobRequest.from_payload(payload)
+
+
+def test_public_admission_must_match_the_exact_job_and_budget() -> None:
+    request = QueuedJobRequest.from_payload(request_payload())
+    admission = {
+        "schema_version": "1.0",
+        "record_type": "public_intake_admission",
+        "state": "reserved",
+        "project_id": request.project_id,
+        "job_id": request.job_id,
+        "admission_day": request.admission_day,
+        "admission_slot": request.admission_slot,
+        "provider_budget": {
+            "max_tts_calls": request.max_tts_calls,
+            "max_tts_characters": request.max_tts_characters,
+        },
+    }
+
+    _validate_public_admission(request, admission)
+    admission["job_id"] = f"localize-{'f' * 32}"
+    with pytest.raises(ValueError, match="does not match"):
+        _validate_public_admission(request, admission)
 
 
 def test_status_writer_is_append_only_and_idempotent() -> None:

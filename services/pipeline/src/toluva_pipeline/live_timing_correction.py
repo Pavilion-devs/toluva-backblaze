@@ -28,6 +28,7 @@ from toluva_pipeline.domain.authorization import (
 )
 from toluva_pipeline.domain.correction import (
     AttemptContext,
+    CorrectionAttempt,
     ScriptedTranslationRewriter,
     SpeechArtifact,
     TimingCorrectionEngine,
@@ -64,6 +65,62 @@ class AssetIntegrityError(RuntimeError):
     """Raised when stored manifest or asset verification fails."""
 
 
+class ProviderSpendBudgetExceeded(RuntimeError):
+    """Raised before TTS when one job would exceed its durable budget."""
+
+
+class ProviderSpendBudget:
+    """Reserve per-job calls and characters before a billable request."""
+
+    def __init__(
+        self,
+        *,
+        max_calls: int | None,
+        max_characters: int | None,
+    ) -> None:
+        if (max_calls is None) != (max_characters is None):
+            raise ValueError("Provider spend limits must be configured together")
+        if max_calls is not None and max_calls < 1:
+            raise ValueError("Provider call budget must be positive")
+        if max_characters is not None and max_characters < 1:
+            raise ValueError("Provider character budget must be positive")
+        self._max_calls = max_calls
+        self._max_characters = max_characters
+        self._attempt_ids: set[str] = set()
+        self._calls = 0
+        self._characters = 0
+
+    @property
+    def consumed_calls(self) -> int:
+        return self._calls
+
+    @property
+    def consumed_characters(self) -> int:
+        return self._characters
+
+    def reserve(self, attempt_id: str, text: str) -> None:
+        if not attempt_id or not text:
+            raise ValueError("A provider reservation requires an attempt and text")
+        if attempt_id in self._attempt_ids:
+            return
+        next_calls = self._calls + 1
+        next_characters = self._characters + len(text)
+        if self._max_calls is not None and next_calls > self._max_calls:
+            raise ProviderSpendBudgetExceeded(
+                "TTS call budget exhausted before provider invocation"
+            )
+        if (
+            self._max_characters is not None
+            and next_characters > self._max_characters
+        ):
+            raise ProviderSpendBudgetExceeded(
+                "TTS character budget exhausted before provider invocation"
+            )
+        self._attempt_ids.add(attempt_id)
+        self._calls = next_calls
+        self._characters = next_characters
+
+
 @dataclass(frozen=True)
 class LiveTimingCorrectionReport:
     outcome: TimingCorrectionOutcome
@@ -93,6 +150,8 @@ class GenblazeElevenLabsAttemptGenerator:
         language: str = LIVE_LANGUAGE,
         language_code: str = "de",
         purpose: str = "internal-training",
+        max_tts_calls: int | None = None,
+        max_tts_characters: int | None = None,
     ) -> None:
         self._provider = ElevenLabsTTSProvider(api_key=settings.elevenlabs_api_key)
         self._backend = backend
@@ -104,6 +163,10 @@ class GenblazeElevenLabsAttemptGenerator:
         self._language_code = language_code
         self._purpose = purpose
         self._results: dict[str, PipelineResult] = {}
+        self._spend_budget = ProviderSpendBudget(
+            max_calls=max_tts_calls,
+            max_characters=max_tts_characters,
+        )
 
     def restore_parent(self, speech: SpeechArtifact) -> None:
         """Rehydrate verified lineage after a worker restart without TTS."""
@@ -132,11 +195,24 @@ class GenblazeElevenLabsAttemptGenerator:
             manifest,
         )
 
+    def restore_attempt(self, attempt: CorrectionAttempt) -> None:
+        """Restore verified lineage and count the durable attempt once."""
+
+        self.restore_parent(attempt.speech)
+        self._spend_budget.reserve(
+            attempt.context.idempotency_key,
+            attempt.context.translated_text,
+        )
+
     def generate(
         self,
         request: TimingCorrectionRequest,
         context: AttemptContext,
     ) -> SpeechArtifact:
+        self._spend_budget.reserve(
+            context.idempotency_key,
+            context.translated_text,
+        )
         prefix = self._keys.speech_genblaze_prefix(
             self._scope,
             request.segment_id,
