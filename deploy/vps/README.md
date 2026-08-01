@@ -30,9 +30,8 @@ pre-existing service.
 - `toluva-worker.service` — systemd unit that owns the one container replica
 - `worker.env.example` — secret-free runtime contract
 
-The current deployment image is `toluva-worker:queue-v4-5630c2f`, built from
-the sentence-aware segmentation and timing-review contract source over the
-verified queue-v4 base. It
+The current deployment image is `toluva-worker:queue-v4-39b1b9a`, built from
+the bounded tempo-fit audio-assembly source over the verified queue-v4 base. It
 contains Python 3.12.13, the locked CPU-only Python environment,
 FFmpeg/FFprobe, the pinned Faster Whisper model, and the pinned Argos
 English-to-German model.
@@ -66,7 +65,7 @@ Installing or starting Toluva must not require a reboot.
 1. Install Docker from the Ubuntu package repository without upgrading or
    restarting unrelated services.
 2. Load the verified `linux/amd64` image and tag it
-   `toluva-worker:queue-v4-5630c2f`.
+   `toluva-worker:queue-v4-39b1b9a`.
 3. Create `/etc/toluva/worker.env` from `worker.env.example`, insert only the
    scoped B2 credential and ElevenLabs key, and set mode `0600`.
 4. Copy `toluva-worker.service` to `/etc/systemd/system/`.
@@ -389,6 +388,50 @@ unrelated service units.
   the kernel recorded no OOM entry. Dara's API health endpoint returned
   `status: ok`, and its public web endpoint responded. The process change is
   recorded here instead of claiming unchanged PIDs.
+
+## Queue-v4 bounded tempo-fit release — August 1, 2026
+
+- Source revision `39b1b9ac45721d95cd11f3feebeac7d33e2e28ed` passed all
+  126 pipeline tests, including the exact controlled-proof segment timings,
+  the 12.418/12.419-second rounding edge, the 8% policy boundary, and an actual
+  FFmpeg tempo-fit execution.
+- The release fits accepted overlong speech to its source slot with a bounded
+  speed-up only. It never slows short speech, preserves source gaps with
+  silence, and records factors and post-fit durations in the audio manifest.
+  A new `tempo-fit-v2` stage namespace preserves the prior failed attempt.
+- The main Dockerfile, `pyproject.toml`, and `uv.lock` were byte-for-byte
+  unchanged from the verified queue-v4 base. The source-only image was built
+  off-host because the VPS had 2,089,328,640 bytes available memory, below the
+  2.5-GB on-host build threshold.
+- The deployed image is `toluva-worker:queue-v4-39b1b9a`, image ID
+  `sha256:c453d0c7d563953c6dea837d1aedf8b3425d169306a60cf7f7d19efbd0da69a7`,
+  architecture `amd64`, and size 1,629,220,005 bytes. The 1,621,037,899-byte
+  transfer archive matched SHA-256
+  `98aa842a0e10f82e68c074be065bd7213d046bf4ab1d458decc1f6fe4c6ff400`
+  locally and remotely. Network-disabled tempo-fit readiness passed both
+  before transfer and on the VPS before cutover.
+- Final worker state is active, `running healthy`, zero restarts, no published
+  ports, 1.5 CPUs, 2,000 MB RAM, 256 processes, UID/GID 10001, all
+  capabilities dropped, and `no-new-privileges`. The unit hash is
+  `63f33b22b4c158ddc8dd5a539a6716a4b144f509394606dfc5a87de8b702cf6f`.
+  Consecutive worker ticks returned to `idle` after the proof.
+- The exact preserved controlled job completed without another ElevenLabs
+  call: speech manifests remained exactly three, and the immutable final record
+  remained at three attempts and 189 characters. Segment 2 used tempo factor
+  `1.0448980952`; the audio and composition manifests verify and both stored
+  asset hashes match.
+- The final 12.419-second MP4 has H.264 video, AAC audio, and embedded German
+  `mov_text` captions. Its B2 bytes, composition manifest, and final record all
+  agree on SHA-256
+  `369f3eea954c2bba91bd7a65cade78a86a9f9e1050cf915702e9a2da2e3917fe`.
+  B2 contains `14-completed`, the final record, and synthetic-stock-voice
+  disclosure while preserving the earlier `99-failed` record.
+- Dara and Cloudflare unit hashes were unchanged. Their immediate pre-cutover
+  process IDs stayed unchanged through final verification, and Dara's health
+  endpoint remained green. The Dara API PID changed earlier during the long
+  archive transfer, though no command targeted Dara; its unit stayed active
+  with a successful result and zero restart count. This is recorded rather
+  than described as unchanged for the entire transfer window.
 
 ## Rollback
 

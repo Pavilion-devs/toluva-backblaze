@@ -1,7 +1,7 @@
 # Toluva — Product, Architecture, and Win Plan
 
 Last updated: August 1, 2026
-Status: source v11 proof reached audio assembly; 3/4 ElevenLabs calls and 189/320 characters used; zero-spend tempo-fit fix required
+Status: source v11 controlled proof complete; final captioned German MP4 and synthetic-voice disclosure verified; 3/4 ElevenLabs calls and 189/320 characters used
 Submission deadline: August 3, 2026 at 10:00 p.m. WAT  
 Internal submission target: August 3, 2026 at 6:00 p.m. WAT
 
@@ -2178,6 +2178,53 @@ failed stage and use a new versioned assembly checkpoint so replay can reuse
 the verified transcript, translations, and all three speech assets without
 another ElevenLabs call. Do not spend the remaining one-call/131-character
 headroom to solve an FFmpeg assembly-policy defect.
+
+### 2026-08-01 — Controlled proof completed with zero additional voice spend
+
+Decision and implementation: Source revision
+`39b1b9ac45721d95cd11f3feebeac7d33e2e28ed` added a bounded tempo-fit
+assembly policy. It speeds up only accepted overlong speech, never slows
+underlong speech, caps the factor at the existing green 8% timing threshold,
+preserves source gaps with silence, and records factors plus post-fit durations
+in the Genblaze audio manifest. A new `tempo-fit-v2` checkpoint namespace
+preserves the earlier failed intent and manifest. Timestamp validation also
+permits only the existing 0.04-second tolerance for source/transcript rounding;
+the controlled 12.418/12.419-second edge is covered by regression tests.
+
+Verification: all 126 pipeline tests passed. A source-only `linux/amd64` image
+was built from the unchanged verified queue-v4 runtime and deployed as
+`toluva-worker:queue-v4-39b1b9a`. The local and VPS image ID is
+`sha256:c453d0c7d563953c6dea837d1aedf8b3425d169306a60cf7f7d19efbd0da69a7`.
+The worker is active, healthy, at zero restarts, and back to consecutive idle
+ticks with the original no-port, 1.5-CPU, 2,000-MB, 256-process, non-root,
+capability-dropped, no-new-privileges boundary intact. Dara and Cloudflare unit
+hashes were unchanged, their immediate pre-cutover process IDs stayed unchanged
+through final verification, and Dara's health endpoint remained green.
+
+The exact preserved job was resumed manually because its immutable
+`99-failed` event correctly keeps it out of ordinary queue scans. No new intake
+request was created. The B2 namespace contained three speech manifests before
+replay and exactly the same three afterward. The final record independently
+reports three TTS attempts and 189 generated characters, proving the remaining
+one-call/131-character approval headroom was not used.
+
+Final controlled-proof evidence:
+
+- Segment 2 was fitted by exactly `1.0448980952`, producing a 3.15-second
+  post-fit duration. Segments 1 and 3 remained at factor `1.0` and natural
+  delivery; source gaps were filled with silence.
+- The new audio run is `d892a9a5-4e8f-4c68-92fa-41f46d87de9d`; its manifest
+  verifies and its stored WAV hash matches the manifest.
+- The composition run is `cb37c234-725b-4b54-89de-49ee221f6299`; its manifest
+  verifies and its stored MP4 hash matches both the manifest and final record.
+- The final 12.419-second MP4 has H.264 video, AAC audio, and embedded German
+  `mov_text` captions. Its SHA-256 is
+  `369f3eea954c2bba91bd7a65cade78a86a9f9e1050cf915702e9a2da2e3917fe`.
+- B2 now contains the immutable final record, `14-completed` status, caption
+  asset, composition output, and a disclosure stating synthetic stock voice,
+  ElevenLabs provider, authorization binding, and human approval required
+  before publish. The earlier failed stage and `99-failed` event remain
+  preserved as honest lineage.
 
 ## 22. Official References
 
