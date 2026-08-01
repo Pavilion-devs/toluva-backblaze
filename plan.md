@@ -1420,11 +1420,11 @@ Avoid:
 
 ### Feedback Prize
 
-- [ ] File a useful Genblaze GitHub issue
-- [ ] Include reproducible details
-- [ ] Explain practical impact
-- [ ] Propose a viable improvement
-- [ ] Link the issue in the submission if appropriate
+- [x] File a useful Genblaze GitHub issue
+- [x] Include reproducible details
+- [x] Explain practical impact
+- [x] Propose a viable improvement
+- [x] Link the issue in the submission if appropriate
 
 ## 19. Risks and Mitigations
 

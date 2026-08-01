@@ -1,6 +1,7 @@
 # Genblaze feedback candidate: provider `output_dir` cannot be used by the storage sink
 
-Status: Reproduced and worked around on July 29, 2026
+Status: Reproduced and worked around on July 29, 2026; filed upstream as
+<https://github.com/backblaze-labs/genblaze/issues/247>
 
 ## Environment
 

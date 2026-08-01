@@ -13,6 +13,8 @@ Application: <https://usetoluva.xyz>
 
 Hosting fallback: <https://toluva.asaborodaniel.chatgpt.site>
 
+Genblaze feedback: <https://github.com/backblaze-labs/genblaze/issues/247>
+
 ## Submitted capability
 
 The deployed release proves one English-to-German lane with server-enforced
