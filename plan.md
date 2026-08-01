@@ -1,7 +1,7 @@
 # Toluva — Product, Architecture, and Win Plan
 
-Last updated: August 1, 2026
-Status: public v17 proof remains deployed; product-first UI and bounded live-intake release candidate implemented locally; matching queue-v5 worker deployed and reporting healthy through B2; source v11 controlled proof retained as an example project; final captioned German MP4, three-segment timing evidence, nine manifests, and synthetic-voice disclosure verified; `usetoluva.xyz` attached; no new provider call made during productization
+Last updated: August 2, 2026
+Status: public Sites v18 product experience deployed at `usetoluva.xyz` with bounded live intake enabled; matching queue-v5 worker reports healthy through B2; source v11 controlled proof remains an example project; final captioned German MP4, three-segment timing evidence, nine manifests, and synthetic-voice disclosure verified; no provider call was made during productization, UI release, or production smoke testing
 Submission deadline: August 3, 2026 at 10:00 p.m. WAT  
 Internal submission target: August 3, 2026 at 6:00 p.m. WAT
 
@@ -2325,12 +2325,29 @@ reserves calls and characters before any provider invocation; restored
 attempts count once by idempotency key. A mismatched slot, missing disclosure,
 lost rights confirmation, or exhausted budget stops before ElevenLabs.
 
-Release boundary: `TOLUVA_ENABLE_LIVE_INTAKE` still fails closed on public
-Sites version 17. The matching queue-v5 worker revision is now deployed and
-reports a healthy, idle B2 heartbeat. Public web activation remains separate
-and should happen only after the planned visual cleanup and final release QA.
-Productization, worker release, and their test suites made zero Whisper, Argos,
-ElevenLabs, FFmpeg, or new B2 intake runs.
+Release state: public Sites version 18 now enables live intake with three UTC-
+day admission slots. The matching queue-v5 worker reports a healthy, idle B2
+heartbeat and independently enforces the per-job provider ceiling. The final
+UI pass added grouped mobile navigation, selected-video preview, durable-stage
+progress, responsive timing cards, and clearer product framing without changing
+the protected engine or API contract. Lint, the production build, 19 rendered
+web/API tests, and all 131 pipeline tests passed. Production smoke checks on
+`usetoluva.xyz` confirmed the real upload UI and queue-v5 heartbeat without
+uploading a source or invoking Whisper, Argos, ElevenLabs, or FFmpeg.
+
+### 2026-08-02 — Product UI and bounded-intake production release
+
+Decision: publish commit `981bd3da27328d33b6e183e240d8efbc1cd8bdda` as
+Sites version 18 and activate the already-reviewed bounded intake contract.
+The canonical domain is active with SSL. The landing page routes directly to
+`/workspace/new`; the completed controlled run is visibly an example project;
+and no judge-mode or proof-first framing appears in the production product.
+
+The release also preserves an inspected upload after a transient queue error
+so it can be retried, allows Remove followed by reselecting the exact same file,
+and ignores stale metadata inspection results when a newer drag-and-drop
+selection wins. These are client-only resilience changes; B2 admission,
+authorization, disclosure, provider budgets, and worker behavior are unchanged.
 
 ## 22. Official References
 
