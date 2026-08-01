@@ -3,15 +3,19 @@ import "server-only";
 import { getB2Json, listB2Files } from "./b2-server";
 import {
   VERIFIED_RUN_SNAPSHOT,
+  type RunAsset,
   type RunManifest,
+  type TimingSegment,
   type VerifiedRun,
 } from "./verified-run";
 
-export const VERIFIED_FINAL_RECORD_KEY =
-  "projects/live-localization-project/jobs/english-to-german-v4/de-de/final/live-v1.json";
-
+const PROJECT_ROOT =
+  "projects/intake-57f5ca73b1fb4b4d97e85f94605f39e5/";
 const JOB_PREFIX =
-  "projects/live-localization-project/jobs/english-to-german-v4/de-de/";
+  `${PROJECT_ROOT}jobs/localize-c33715df7d024a27950560095077ff52/de-de/`;
+const AUTHORIZATION_ID = "auth-stock-intake-v1";
+
+export const VERIFIED_FINAL_RECORD_KEY = `${JOB_PREFIX}final/live-v1.json`;
 
 type JsonRecord = Record<string, unknown>;
 
@@ -29,36 +33,53 @@ type ManifestRecord = {
   };
 };
 
-function text(record: JsonRecord, field: string): string {
-  const value = record[field];
-  if (typeof value !== "string" || !value) {
-    throw new Error(`verified_run_missing_${field}`);
+function record(value: unknown, label: string): JsonRecord {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`verified_run_invalid_${label}`);
   }
-  return value;
+  return value as JsonRecord;
 }
 
-function number(record: JsonRecord, field: string): number {
-  const value = record[field];
-  if (typeof value !== "number" || !Number.isFinite(value)) {
-    throw new Error(`verified_run_missing_${field}`);
+function recordArray(value: unknown, label: string): JsonRecord[] {
+  if (!Array.isArray(value)) {
+    throw new Error(`verified_run_invalid_${label}`);
   }
-  return value;
+  return value.map((item, index) => record(item, `${label}_${index}`));
 }
 
-function boolean(record: JsonRecord, field: string): boolean {
-  const value = record[field];
-  if (typeof value !== "boolean") {
+function text(value: JsonRecord, field: string): string {
+  const candidate = value[field];
+  if (typeof candidate !== "string" || !candidate) {
     throw new Error(`verified_run_missing_${field}`);
   }
-  return value;
+  return candidate;
 }
 
-function stringArray(record: JsonRecord, field: string): string[] {
-  const value = record[field];
-  if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) {
+function number(value: JsonRecord, field: string): number {
+  const candidate = value[field];
+  if (typeof candidate !== "number" || !Number.isFinite(candidate)) {
     throw new Error(`verified_run_missing_${field}`);
   }
-  return value as string[];
+  return candidate;
+}
+
+function boolean(value: JsonRecord, field: string): boolean {
+  const candidate = value[field];
+  if (typeof candidate !== "boolean") {
+    throw new Error(`verified_run_missing_${field}`);
+  }
+  return candidate;
+}
+
+function stringArray(value: JsonRecord, field: string): string[] {
+  const candidate = value[field];
+  if (
+    !Array.isArray(candidate) ||
+    candidate.some((item) => typeof item !== "string")
+  ) {
+    throw new Error(`verified_run_missing_${field}`);
+  }
+  return candidate as string[];
 }
 
 function manifestFromRecord(
@@ -89,64 +110,114 @@ function manifestFromRecord(
   };
 }
 
-function assertVerifiedKey(value: string): string {
-  if (
-    !value.startsWith("projects/live-localization-project/") ||
-    !value.endsWith(".json")
-  ) {
+function assertVerifiedRecordKey(value: string): string {
+  if (!value.startsWith(PROJECT_ROOT) || !value.endsWith(".json")) {
     throw new Error("verified_run_references_unexpected_record");
   }
   return value;
 }
 
+function selectedAttempt(timing: JsonRecord): JsonRecord {
+  const attempts = recordArray(timing.attempts, "timing_attempts");
+  const selectedAttemptNumber = number(timing, "selected_attempt_number");
+  const selected = attempts.find((attempt) => {
+    const context = record(attempt.context, "timing_context");
+    return context.attempt_number === selectedAttemptNumber;
+  });
+  if (!selected) throw new Error("verified_run_selected_attempt_missing");
+  return selected;
+}
+
+function timingSegment(result: JsonRecord): TimingSegment {
+  const source = record(result.source_segment, "source_segment");
+  const translation = record(result.translation, "translation");
+  const timing = record(result.timing, "timing");
+  const attempt = selectedAttempt(timing);
+  const speech = record(attempt.speech, "speech");
+  const slotSeconds = number(attempt, "slot_seconds");
+  const generatedSeconds = number(speech, "generated_seconds");
+  const tempoFactor =
+    generatedSeconds > slotSeconds ? generatedSeconds / slotSeconds : 1;
+
+  return {
+    action: text(attempt, "timing_action"),
+    attemptCount: recordArray(timing.attempts, "timing_attempts").length,
+    band: text(attempt, "timing_band"),
+    driftRatio: number(attempt, "drift_ratio"),
+    driftSeconds: number(attempt, "drift_seconds"),
+    endSeconds: number(source, "end_seconds"),
+    finalSeconds: slotSeconds,
+    generatedSeconds,
+    id: text(source, "segment_id"),
+    sourceText: text(source, "text"),
+    startSeconds: number(source, "start_seconds"),
+    status: text(timing, "status"),
+    tempoFactor,
+    translatedText: text(translation, "translated_text"),
+    wordTimingCount: number(speech, "word_timing_count"),
+  };
+}
+
+function numberedManifestInputs(
+  label: string,
+  keys: string[],
+): Array<readonly [string, string]> {
+  return keys.map((key, index) => [
+    `${label} ${index + 1}`,
+    assertVerifiedRecordKey(key),
+  ] as const);
+}
+
 export async function loadVerifiedRunFromB2(): Promise<VerifiedRun> {
   const finalRecord = await getB2Json<JsonRecord>(VERIFIED_FINAL_RECORD_KEY);
-  const transcriptKey = assertVerifiedKey(text(finalRecord, "transcript_key"));
-  const disclosureKey = assertVerifiedKey(text(finalRecord, "disclosure_key"));
-  const authorizationId = "auth-stock-live-v1";
+  const transcriptKey = assertVerifiedRecordKey(
+    text(finalRecord, "transcript_key"),
+  );
+  const disclosureKey = assertVerifiedRecordKey(
+    text(finalRecord, "disclosure_key"),
+  );
   const authorizationKey =
-    `projects/live-localization-project/authorizations/${authorizationId}/` +
-    "record.json";
+    `${PROJECT_ROOT}authorizations/${AUTHORIZATION_ID}/record.json`;
+  const segmentResults = recordArray(
+    finalRecord.segment_results,
+    "segment_results",
+  );
+  const timingSegments = segmentResults.map(timingSegment);
 
-  const manifestInputs = [
-    ["Transcription", assertVerifiedKey(text(finalRecord, "transcription_manifest_key"))],
-    ["Translation", assertVerifiedKey(text(finalRecord, "translation_manifest_key"))],
-    ["Speech", assertVerifiedKey(text(finalRecord, "selected_speech_manifest_key"))],
-    ["Composition", assertVerifiedKey(text(finalRecord, "composition_manifest_key"))],
-  ] as const;
+  const manifestInputs: Array<readonly [string, string]> = [
+    [
+      "Transcription",
+      assertVerifiedRecordKey(
+        text(finalRecord, "transcription_manifest_key"),
+      ),
+    ],
+    ...numberedManifestInputs(
+      "Translation",
+      stringArray(finalRecord, "translation_manifest_keys"),
+    ),
+    ...numberedManifestInputs(
+      "Speech",
+      stringArray(finalRecord, "selected_speech_manifest_keys"),
+    ),
+    [
+      "Audio assembly",
+      assertVerifiedRecordKey(
+        text(finalRecord, "localized_audio_manifest_key"),
+      ),
+    ],
+    [
+      "Composition",
+      assertVerifiedRecordKey(text(finalRecord, "composition_manifest_key")),
+    ],
+  ];
 
-  const [transcript, timing, disclosure, authorization, ...manifestRecords] =
+  const [transcript, disclosure, authorization, ...manifestRecords] =
     await Promise.all([
       getB2Json<JsonRecord>(transcriptKey),
-      getB2Json<JsonRecord>(
-        `${JOB_PREFIX}qa/segment-001/summary.json`,
-      ),
       getB2Json<JsonRecord>(disclosureKey),
       getB2Json<JsonRecord>(authorizationKey),
       ...manifestInputs.map(([, key]) => getB2Json<ManifestRecord>(key)),
     ]);
-
-  const attempts = timing.attempts;
-  if (!Array.isArray(attempts) || attempts.length < 1) {
-    throw new Error("verified_run_missing_timing_attempt");
-  }
-  const selectedAttemptNumber = number(timing, "selected_attempt_number");
-  const selectedAttempt = attempts.find((attempt) => {
-    if (!attempt || typeof attempt !== "object") return false;
-    const context = (attempt as JsonRecord).context;
-    return (
-      context &&
-      typeof context === "object" &&
-      (context as JsonRecord).attempt_number === selectedAttemptNumber
-    );
-  }) as JsonRecord | undefined;
-  if (!selectedAttempt) throw new Error("verified_run_selected_attempt_missing");
-  const speech = selectedAttempt.speech;
-  if (!speech || typeof speech !== "object") {
-    throw new Error("verified_run_speech_missing");
-  }
-  const speechRecord = speech as JsonRecord;
-
   const manifests = manifestInputs.map(([stage], index) =>
     manifestFromRecord(stage, manifestRecords[index]),
   );
@@ -155,11 +226,76 @@ export async function loadVerifiedRunFromB2(): Promise<VerifiedRun> {
   const sourceKey = text(finalRecord, "source_key");
   const finalAssetKey = text(finalRecord, "final_asset_key");
   const captionsKey = text(finalRecord, "captions_key");
-  const selectedSpeechKey = text(finalRecord, "selected_speech_key");
-  const detectedSourceText = text(finalRecord, "detected_source_text");
-  const translatedText = text(finalRecord, "translated_text");
-  const slotSeconds = number(selectedAttempt, "slot_seconds");
-  const generatedSeconds = number(speechRecord, "generated_seconds");
+  const speechKeys = stringArray(finalRecord, "selected_speech_keys");
+  const localizedAudioKey = text(finalRecord, "localized_audio_asset_key");
+  const protectedTerms = Array.from(
+    new Set(
+      segmentResults.flatMap((result) =>
+        stringArray(result, "protected_terms"),
+      ),
+    ),
+  );
+  const worstTiming = timingSegments.reduce((worst, segment) =>
+    Math.abs(segment.driftRatio) > Math.abs(worst.driftRatio)
+      ? segment
+      : worst,
+  );
+  const assets: RunAsset[] = [
+    {
+      b2Key: sourceKey,
+      kind: "SOURCE",
+      meta:
+        `${number(finalRecord, "source_duration_seconds").toFixed(3)}s · ` +
+        "SHA-256 verified",
+      name: sourceKey.split("/").at(-1) ?? "source.mp4",
+    },
+    {
+      b2Key: transcriptKey,
+      kind: "TRANSCRIPT",
+      meta: `${text(transcript, "source")} · ${timingSegments.length} timed segments`,
+      name: transcriptKey.split("/").at(-1) ?? "transcript.json",
+    },
+    ...speechKeys.map((key, index) => ({
+      b2Key: key,
+      kind: "SPEECH",
+      meta:
+        `${timingSegments[index].generatedSeconds.toFixed(3)}s · ` +
+        `${timingSegments[index].wordTimingCount} word timings`,
+      name: `segment-${String(index + 1).padStart(3, "0")}.mp3`,
+    })),
+    {
+      b2Key: localizedAudioKey,
+      kind: "AUDIO",
+      meta: `${timingSegments.length}-segment fan-in · bounded tempo-fit`,
+      name: "localized-audio.wav",
+    },
+    {
+      b2Key: captionsKey,
+      kind: "CAPTIONS",
+      meta: "WebVTT · embedded in final",
+      name: captionsKey.split("/").at(-1) ?? "captions.vtt",
+    },
+    {
+      b2Key: finalAssetKey,
+      kind: "FINAL",
+      meta:
+        `${number(finalRecord, "final_duration_seconds").toFixed(3)}s · ` +
+        "H.264 / AAC / mov_text",
+      name: "localized-de.mp4",
+    },
+    {
+      b2Key: disclosureKey,
+      kind: "DISCLOSURE",
+      meta: "Synthetic stock voice · approval required",
+      name: disclosureKey.split("/").at(-1) ?? "disclosure.json",
+    },
+    {
+      b2Key: VERIFIED_FINAL_RECORD_KEY,
+      kind: "RECORD",
+      meta: `${Object.keys(finalRecord).length}-field durable run record`,
+      name: "live-v1.json",
+    },
+  ];
 
   return {
     ...VERIFIED_RUN_SNAPSHOT,
@@ -179,7 +315,7 @@ export async function loadVerifiedRunFromB2(): Promise<VerifiedRun> {
       b2Key: sourceKey,
       durationSeconds: number(finalRecord, "source_duration_seconds"),
       sha256: text(finalRecord, "source_sha256"),
-      text: detectedSourceText,
+      text: text(finalRecord, "detected_source_text"),
       transcriptKey,
       transcriptionModel: text(finalRecord, "transcription_model"),
       transcriptionProvider: text(finalRecord, "transcription_provider"),
@@ -191,11 +327,12 @@ export async function loadVerifiedRunFromB2(): Promise<VerifiedRun> {
       finalAssetKey,
       finalDurationSeconds: number(finalRecord, "final_duration_seconds"),
       finalSha256: text(finalRecord, "final_asset_sha256"),
+      protectedTerms,
       protectedTermsPreserved: boolean(
         finalRecord,
         "protected_terms_preserved",
       ),
-      translatedText,
+      translatedText: text(finalRecord, "translated_text"),
       translationModel: text(finalRecord, "translation_model"),
       translationProvider: text(finalRecord, "translation_provider"),
     },
@@ -206,22 +343,32 @@ export async function loadVerifiedRunFromB2(): Promise<VerifiedRun> {
       code: text(finalRecord, "authorization_code"),
       disclosure: text(authorization, "disclosure"),
       expiresAt: text(authorization, "expires_at"),
-      id: authorizationId,
+      id: AUTHORIZATION_ID,
       voiceType: text(authorization, "voice_type"),
     },
     timing: {
-      action: text(selectedAttempt, "timing_action"),
-      attemptCount: attempts.length,
-      band: text(selectedAttempt, "timing_band"),
-      driftRatio: number(selectedAttempt, "drift_ratio"),
-      driftSeconds: number(selectedAttempt, "drift_seconds"),
-      generatedCharacters: number(timing, "total_generated_characters"),
-      generatedSeconds,
-      model: text(speechRecord, "model"),
-      provider: text(speechRecord, "provider"),
-      slotSeconds,
-      status: text(timing, "status"),
-      wordTimingCount: number(speechRecord, "word_timing_count"),
+      action: text(finalRecord, "timing_action"),
+      attemptCount: number(finalRecord, "tts_attempt_count"),
+      band: text(finalRecord, "timing_band"),
+      driftRatio: worstTiming.driftRatio,
+      driftSeconds: worstTiming.driftSeconds,
+      generatedCharacters: number(finalRecord, "tts_generated_characters"),
+      generatedSeconds: timingSegments.reduce(
+        (total, segment) => total + segment.generatedSeconds,
+        0,
+      ),
+      model: VERIFIED_RUN_SNAPSHOT.timing.model,
+      provider: VERIFIED_RUN_SNAPSHOT.timing.provider,
+      segments: timingSegments,
+      slotSeconds: number(finalRecord, "source_duration_seconds"),
+      status: text(finalRecord, "timing_status"),
+      tempoAdjustedSegmentIds: timingSegments
+        .filter((segment) => segment.tempoFactor > 1.000001)
+        .map((segment) => segment.id),
+      wordTimingCount: timingSegments.reduce(
+        (total, segment) => total + segment.wordTimingCount,
+        0,
+      ),
     },
     disclosure: {
       humanApprovalRequired: boolean(
@@ -238,49 +385,24 @@ export async function loadVerifiedRunFromB2(): Promise<VerifiedRun> {
       voiceProvider: text(disclosure, "voice_provider"),
       voiceType: text(disclosure, "voice_type"),
     },
-    manifests,
-    assets: [
+    pipeline: [
+      { name: "Ingest", detail: "Source stored in B2", state: "done" },
       {
-        b2Key: sourceKey,
-        kind: "SOURCE",
-        meta: `${slotSeconds.toFixed(3)}s · SHA-256 verified`,
-        name: sourceKey.split("/").at(-1) ?? "source.mp4",
+        name: "Transcribe",
+        detail: `${timingSegments.length} timed segments`,
+        state: "done",
       },
+      { name: "Translate", detail: "Toluva preserved", state: "done" },
+      { name: "Authorize", detail: "Stock voice allowed", state: "done" },
+      { name: "Time-fit QA", detail: "2 pad · 1 tempo-fit", state: "done" },
       {
-        b2Key: transcriptKey,
-        kind: "TRANSCRIPT",
-        meta: `${text(transcript, "source")} · timed segment`,
-        name: transcriptKey.split("/").at(-1) ?? "transcript.json",
-      },
-      {
-        b2Key: selectedSpeechKey,
-        kind: "AUDIO",
-        meta:
-          `${generatedSeconds.toFixed(3)}s · ` +
-          `${number(speechRecord, "word_timing_count")} word timings`,
-        name: selectedSpeechKey.split("/").at(-1) ?? "speech.mp3",
-      },
-      {
-        b2Key: captionsKey,
-        kind: "CAPTIONS",
-        meta: "WebVTT · embedded in final",
-        name: captionsKey.split("/").at(-1) ?? "captions.vtt",
-      },
-      {
-        b2Key: finalAssetKey,
-        kind: "FINAL",
-        meta:
-          `${number(finalRecord, "final_duration_seconds").toFixed(3)}s · ` +
-          "H.264 / AAC / mov_text",
-        name: "localized-de.mp4",
-      },
-      {
-        b2Key: VERIFIED_FINAL_RECORD_KEY,
-        kind: "RECORD",
-        meta: `${Object.keys(finalRecord).length}-field durable run record`,
-        name: "live-v1.json",
+        name: "Master",
+        detail: `${number(finalRecord, "final_duration_seconds").toFixed(3)}s verified`,
+        state: "done",
       },
     ],
+    manifests,
+    assets,
     b2ObjectCount:
       jobFiles.length > 0
         ? jobFiles.length
@@ -299,7 +421,7 @@ export async function verifiedMediaKey(
     speech: "selected_speech_key",
   }[kind];
   const key = text(finalRecord, field);
-  if (!key.startsWith("projects/live-localization-project/")) {
+  if (!key.startsWith(PROJECT_ROOT)) {
     throw new Error("verified_media_outside_project");
   }
   return key;

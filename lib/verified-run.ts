@@ -24,6 +24,24 @@ export type RunManifest = {
   status: string;
 };
 
+export type TimingSegment = {
+  action: string;
+  attemptCount: number;
+  band: string;
+  driftRatio: number;
+  driftSeconds: number;
+  endSeconds: number;
+  finalSeconds: number;
+  generatedSeconds: number;
+  id: string;
+  sourceText: string;
+  startSeconds: number;
+  status: string;
+  tempoFactor: number;
+  translatedText: string;
+  wordTimingCount: number;
+};
+
 export type VerifiedRun = {
   dataSource: RunDataSource;
   syncedAt: string;
@@ -84,8 +102,10 @@ export type VerifiedRun = {
     generatedSeconds: number;
     model: string;
     provider: string;
+    segments: TimingSegment[];
     slotSeconds: number;
     status: string;
+    tempoAdjustedSegmentIds: string[];
     wordTimingCount: number;
   };
   disclosure: {
@@ -103,53 +123,137 @@ export type VerifiedRun = {
   b2ObjectCount: number;
 };
 
-const projectPrefix =
-  "projects/live-localization-project/jobs/english-to-german-v4/de-de";
-const sourcePrefix = "projects/live-localization-project/source";
+const projectRoot =
+  "projects/intake-57f5ca73b1fb4b4d97e85f94605f39e5";
+const jobPrefix =
+  `${projectRoot}/jobs/localize-c33715df7d024a27950560095077ff52/de-de`;
+const sourcePrefix = `${projectRoot}/source`;
+const sourceKey = `${sourcePrefix}/master/source-1cf1052fe04d4940a966aa7a640e71b9.mp4`;
+const transcriptKey =
+  `${sourcePrefix}/transcript/live-v1-localize-c33715df7d024a27950560095077ff52.json`;
+const finalAssetKey =
+  `${jobPrefix}/composition/live-v1/genblaze/runs/toluva-demo/2026-08-01/` +
+  "cb37c234-725b-4b54-89de-49ee221f6299/assets/" +
+  "c1041556-f8a0-4a24-9db4-6e477100a341.mp4";
+
+function snapshotManifest(
+  stage: string,
+  provider: string,
+  model: string,
+  runId: string,
+  canonicalHash: string,
+  createdAt: string,
+  name: string,
+): RunManifest {
+  return {
+    canonicalHash,
+    createdAt,
+    model,
+    name,
+    provider,
+    runId,
+    stage,
+    status: "completed",
+  };
+}
+
+const timingSegments: TimingSegment[] = [
+  {
+    action: "pad_silence",
+    attemptCount: 1,
+    band: "amber",
+    driftRatio: -0.08875193798449611,
+    driftSeconds: -0.22898,
+    endSeconds: 2.58,
+    finalSeconds: 2.58,
+    generatedSeconds: 2.35102,
+    id: "segment-001",
+    sourceText: "One video can reach every team.",
+    startSeconds: 0,
+    status: "padded",
+    tempoFactor: 1,
+    translatedText: "Ein Video kann jedes Team erreichen.",
+    wordTimingCount: 6,
+  },
+  {
+    action: "accept",
+    attemptCount: 1,
+    band: "green",
+    driftRatio: 0.0448980952380951,
+    driftSeconds: 0.141429,
+    endSeconds: 5.73,
+    finalSeconds: 3.15,
+    generatedSeconds: 3.291429,
+    id: "segment-002",
+    sourceText: "Toluva keeps each synthetic voice authorized.",
+    startSeconds: 2.58,
+    status: "accepted",
+    tempoFactor: 1.0448980952380952,
+    translatedText: "Toluva hält jede synthetische Stimme autorisiert.",
+    wordTimingCount: 6,
+  },
+  {
+    action: "pad_silence",
+    attemptCount: 1,
+    band: "amber",
+    driftRatio: -0.12521617581103298,
+    driftSeconds: -0.837571,
+    endSeconds: 12.419,
+    finalSeconds: 6.689,
+    generatedSeconds: 5.851429,
+    id: "segment-003",
+    sourceText:
+      "When translated speech runs long, Toluva measures the drift and pauses for approved wording.",
+    startSeconds: 5.73,
+    status: "padded",
+    tempoFactor: 1,
+    translatedText:
+      "Wenn übersetzte Sprache lange dauert, misst Toluva die Drift und pausiert für genehmigte Formulierungen.",
+    wordTimingCount: 14,
+  },
+];
 
 export const VERIFIED_RUN_SNAPSHOT: VerifiedRun = {
   dataSource: "verified-snapshot",
-  syncedAt: "2026-07-29T13:21:13.271135Z",
+  syncedAt: "2026-08-01T01:08:05.241078Z",
   project: {
-    id: "live-localization-project",
-    title: "One message, many languages",
-    sourceKind: "Locally generated development sample",
+    id: "intake-57f5ca73b1fb4b4d97e85f94605f39e5",
+    title: "One video, safely localized",
+    sourceKind: "Controlled 12.419-second production proof",
     sourceLanguage: "English",
-    developmentSample: true,
+    developmentSample: false,
   },
   job: {
-    id: "english-to-german-v4",
+    id: "localize-c33715df7d024a27950560095077ff52",
     language: "de-DE",
     status: "completed",
     version: "live-v1",
   },
   source: {
-    b2Key: `${sourcePrefix}/master/system-voice-source-v2.mp4`,
-    durationSeconds: 4,
+    b2Key: sourceKey,
+    durationSeconds: 12.419,
     sha256:
-      "f5872bd6324abd57d5c0a534c11729989a9e3a5f10384783dc49d8a98c6ad41e",
-    text: "Welcome to Toluva, One Message, Many Languages.",
-    transcriptKey: `${sourcePrefix}/transcript/live-v1-english-to-german-v4.json`,
+      "ca09bbdaf32fc1f9b87c3c41f843bde9a2720c5d6222bb1d3a048f27c0846c00",
+    text:
+      "One video can reach every team. Toluva keeps each synthetic voice authorized. When translated speech runs long, Toluva measures the drift and pauses for approved wording.",
+    transcriptKey,
     transcriptionModel: "whisper-base-en",
     transcriptionProvider: "faster-whisper-local",
   },
   edition: {
     captionsEmbedded: true,
-    captionsKey: `${projectPrefix}/captions/live-v1.vtt`,
+    captionsKey: `${jobPrefix}/captions/live-v1.vtt`,
     code: "de",
-    finalAssetKey:
-      `${projectPrefix}/composition/live-v1/genblaze/runs/toluva-demo/` +
-      "2026-07-29/4136f395-4ecf-4f29-9a43-619203ee0adb/assets/" +
-      "7b4e6b79-ddcc-4a77-82b1-95b62a762d1e.mp4",
-    finalDurationSeconds: 4,
+    finalAssetKey,
+    finalDurationSeconds: 12.419,
     finalSha256:
-      "611924ce72726f686ead5cc71ccd131bf85d0a58ba5518605ebccfdc9e52ef2b",
+      "369f3eea954c2bba91bd7a65cade78a86a9f9e1050cf915702e9a2da2e3917fe",
     localName: "Deutsch",
     name: "German",
     protectedTerms: ["Toluva"],
     protectedTermsPreserved: true,
     translatedText:
-      "Willkommen bei Toluva, eine Botschaft, viele Sprachen.",
+      "Ein Video kann jedes Team erreichen. Toluva hält jede synthetische Stimme autorisiert. Wenn übersetzte Sprache lange dauert, misst Toluva die Drift und pausiert für genehmigte Formulierungen.",
     translationModel: "translate-en_de-1_3",
     translationProvider: "argos-translate-offline",
   },
@@ -160,22 +264,24 @@ export const VERIFIED_RUN_SNAPSHOT: VerifiedRun = {
     code: "allowed",
     disclosure: "Synthetic stock voice used.",
     expiresAt: "2026-08-12T00:00:00+00:00",
-    id: "auth-stock-live-v1",
+    id: "auth-stock-intake-v1",
     voiceType: "stock",
   },
   timing: {
-    action: "pad_silence",
-    attemptCount: 1,
+    action: "segment_silence_padding",
+    attemptCount: 3,
     band: "amber",
-    driftRatio: -0.11764175,
-    driftSeconds: -0.470567,
-    generatedCharacters: 54,
-    generatedSeconds: 3.529433,
+    driftRatio: -0.12521617581103298,
+    driftSeconds: -0.837571,
+    generatedCharacters: 189,
+    generatedSeconds: 11.493878,
     model: "eleven_flash_v2_5",
     provider: "elevenlabs-tts",
-    slotSeconds: 4,
-    status: "padded",
-    wordTimingCount: 7,
+    segments: timingSegments,
+    slotSeconds: 12.419,
+    status: "ready_for_composition",
+    tempoAdjustedSegmentIds: ["segment-002"],
+    wordTimingCount: 26,
   },
   disclosure: {
     humanApprovalRequired: true,
@@ -188,101 +294,138 @@ export const VERIFIED_RUN_SNAPSHOT: VerifiedRun = {
   },
   pipeline: [
     { name: "Ingest", detail: "Source stored in B2", state: "done" },
-    { name: "Transcribe", detail: "Whisper word timing", state: "done" },
+    { name: "Transcribe", detail: "3 timed segments", state: "done" },
     { name: "Translate", detail: "Toluva preserved", state: "done" },
-    { name: "Authorize", detail: "Policy allowed", state: "done" },
-    { name: "Time-fit QA", detail: "Amber · padded", state: "done" },
-    { name: "Master", detail: "4.000s verified", state: "done" },
+    { name: "Authorize", detail: "Stock voice allowed", state: "done" },
+    { name: "Time-fit QA", detail: "2 pad · 1 tempo-fit", state: "done" },
+    { name: "Master", detail: "12.419s verified", state: "done" },
   ],
   manifests: [
-    {
-      canonicalHash:
-        "1ffc2d251cbd2ee22522982f282cfbe08ff32c6e96e656fb84709caeb83ad7a3",
-      createdAt: "2026-07-29T13:20:27.542287Z",
-      model: "whisper-base-en",
-      name: "toluva-live-transcription",
-      provider: "faster-whisper-local",
-      runId: "87688e8f-e36d-4302-ada1-dc818627a271",
-      stage: "Transcription",
-      status: "completed",
-    },
-    {
-      canonicalHash:
-        "ce2211f24d243a4569614e007b33f6a927100d842886cae56ccadf599e4a9d52",
-      createdAt: "2026-07-29T13:20:33.906545Z",
-      model: "translate-en_de-1_3",
-      name: "toluva-live-translation",
-      provider: "argos-translate-offline",
-      runId: "b29ca5f8-f1a6-40ed-a168-520da6c2d7d7",
-      stage: "Translation",
-      status: "completed",
-    },
-    {
-      canonicalHash:
-        "e8005032ef30844ec6c5b03d1db1a882cb88fd5a4c351a15b45e54037e0d0d71",
-      createdAt: "2026-07-29T13:20:40.657515Z",
-      model: "eleven_flash_v2_5",
-      name: "toluva-live-timing-correction",
-      provider: "elevenlabs-tts",
-      runId: "b266c869-38c1-46eb-bb14-1750b0a11da8",
-      stage: "Speech",
-      status: "completed",
-    },
-    {
-      canonicalHash:
-        "e69e7033b550ecea2708c1a9e7b8ebe7f05a8651a1177b413e8410e71b408990",
-      createdAt: "2026-07-29T13:21:13.271135Z",
-      model: "ffmpeg-captioned-mp4-v1",
-      name: "toluva-live-localized-composition",
-      provider: "toluva-ffmpeg-compositor",
-      runId: "4136f395-4ecf-4f29-9a43-619203ee0adb",
-      stage: "Composition",
-      status: "completed",
-    },
+    snapshotManifest(
+      "Transcription",
+      "faster-whisper-local",
+      "whisper-base-en",
+      "7732778e-9896-485d-b7b5-444e6ca1f618",
+      "37ad7051048e384f8f0015a8d30276237d8a113873bd2d748f0c0ed18e8692e1",
+      "2026-08-01T00:02:00.051958Z",
+      "toluva-live-transcription",
+    ),
+    snapshotManifest(
+      "Translation 1",
+      "argos-translate-offline",
+      "translate-en_de-1_3",
+      "1b6f82d0-b2de-419b-87ef-6c8ab706efd1",
+      "6e91cbdccdded676f7bfbb04464ea44eba218e01a58cc40f96de8befd8cfdeae",
+      "2026-08-01T00:02:28.783288Z",
+      "toluva-live-segment-translation",
+    ),
+    snapshotManifest(
+      "Translation 2",
+      "argos-translate-offline",
+      "translate-en_de-1_3",
+      "95935c74-f3a7-44e0-9ec7-c0fb301533c3",
+      "e352ec7ae478eded4f0aa3827499206b8fc7f3f3bdb1754c4183f1c7d161b438",
+      "2026-08-01T00:02:58.262346Z",
+      "toluva-live-segment-translation",
+    ),
+    snapshotManifest(
+      "Translation 3",
+      "argos-translate-offline",
+      "translate-en_de-1_3",
+      "42868f7c-3aaf-4a6b-b082-25f37c9fb863",
+      "27d5c7a394f5c06505dc7bbc462b1305af3c7e2bc9445717a82ed874a9474eba",
+      "2026-08-01T00:03:27.897193Z",
+      "toluva-live-segment-translation",
+    ),
+    snapshotManifest(
+      "Speech 1",
+      "elevenlabs-tts",
+      "eleven_flash_v2_5",
+      "0b880f4a-79eb-47db-b09b-57dafe7261ca",
+      "a953beff5ee94411307f2cb0a1b8071f79fdfffe2565d85ac941ca08845f2d44",
+      "2026-08-01T00:02:33.652266Z",
+      "toluva-live-timing-correction",
+    ),
+    snapshotManifest(
+      "Speech 2",
+      "elevenlabs-tts",
+      "eleven_flash_v2_5",
+      "dc7c46c7-918e-4774-9075-9b0d3d65e6df",
+      "b77cd7ab072c0c407320a00e6400e45588d490a9dfb83cc50442bba3d6912607",
+      "2026-08-01T00:03:01.559079Z",
+      "toluva-live-timing-correction",
+    ),
+    snapshotManifest(
+      "Speech 3",
+      "elevenlabs-tts",
+      "eleven_flash_v2_5",
+      "4181b050-7b33-42ec-9279-23edff14136b",
+      "ad4d18834b8d2317916b31dc9718a95399a98066278b8d3a39db00738ab388a8",
+      "2026-08-01T00:03:30.794721Z",
+      "toluva-live-timing-correction",
+    ),
+    snapshotManifest(
+      "Audio assembly",
+      "toluva-segment-audio-assembler",
+      "ffmpeg-segment-audio-v2",
+      "d892a9a5-4e8f-4c68-92fa-41f46d87de9d",
+      "9a88474b7e22886797a17b737d103e072b576351d81918516ac648b8b685833c",
+      "2026-08-01T01:07:57.816928Z",
+      "toluva-live-segment-audio-assembly",
+    ),
+    snapshotManifest(
+      "Composition",
+      "toluva-ffmpeg-compositor",
+      "ffmpeg-captioned-mp4-v1",
+      "cb37c234-725b-4b54-89de-49ee221f6299",
+      "c7cb83e1db45df924dcc264a2a2d20ef85d6aa81863d7bc72ff2b77f65f9ea21",
+      "2026-08-01T01:08:05.241078Z",
+      "toluva-live-localized-composition",
+    ),
   ],
   assets: [
     {
-      b2Key: `${sourcePrefix}/master/system-voice-source-v2.mp4`,
+      b2Key: sourceKey,
       kind: "SOURCE",
-      meta: "4.000s · SHA-256 verified",
-      name: "system-voice-source-v2.mp4",
+      meta: "12.419s · SHA-256 verified",
+      name: "source-1cf1052fe04d4940a966aa7a640e71b9.mp4",
     },
     {
-      b2Key: `${sourcePrefix}/transcript/live-v1-english-to-german-v4.json`,
+      b2Key: transcriptKey,
       kind: "TRANSCRIPT",
-      meta: "Whisper · timed segment",
-      name: "live-v1-english-to-german-v4.json",
+      meta: "Whisper · 3 timed segments",
+      name: "live-v1-localize-c33715df7d024a27950560095077ff52.json",
     },
     {
-      b2Key:
-        `${projectPrefix}/speech/segment-001/attempt-1/genblaze/runs/` +
-        "toluva-demo/2026-07-29/b266c869-38c1-46eb-bb14-1750b0a11da8/" +
-        "assets/ed2ec5ae-4e42-40a9-9f2c-c74390917245.mp3",
+      b2Key: `${jobPrefix}/localized-audio/live-v1-tempo-fit-v2/genblaze/runs/toluva-demo/2026-08-01/d892a9a5-4e8f-4c68-92fa-41f46d87de9d/assets/cb854c81-6f73-422f-9120-023510a921b5.wav`,
       kind: "AUDIO",
-      meta: "3.529s · 7 word timings",
-      name: "german-speech-attempt-1.mp3",
+      meta: "3-segment fan-in · bounded tempo-fit",
+      name: "localized-audio.wav",
     },
     {
-      b2Key: `${projectPrefix}/captions/live-v1.vtt`,
+      b2Key: `${jobPrefix}/captions/live-v1.vtt`,
       kind: "CAPTIONS",
       meta: "WebVTT · embedded in final",
       name: "live-v1.vtt",
     },
     {
-      b2Key:
-        `${projectPrefix}/composition/live-v1/genblaze/runs/toluva-demo/` +
-        "2026-07-29/4136f395-4ecf-4f29-9a43-619203ee0adb/assets/" +
-        "7b4e6b79-ddcc-4a77-82b1-95b62a762d1e.mp4",
+      b2Key: finalAssetKey,
       kind: "FINAL",
-      meta: "4.000s · H.264 / AAC / mov_text",
+      meta: "12.419s · H.264 / AAC / mov_text",
       name: "localized-de.mp4",
     },
     {
-      b2Key: `${projectPrefix}/final/live-v1.json`,
+      b2Key: `${jobPrefix}/disclosure/live-v1.json`,
+      kind: "DISCLOSURE",
+      meta: "Synthetic stock voice · approval required",
+      name: "live-v1.json",
+    },
+    {
+      b2Key: `${jobPrefix}/final/live-v1.json`,
       kind: "RECORD",
-      meta: "45-field durable run record",
+      meta: "Immutable controlled-proof record",
       name: "live-v1.json",
     },
   ],
-  b2ObjectCount: 16,
+  b2ObjectCount: 60,
 };

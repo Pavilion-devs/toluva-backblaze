@@ -1,7 +1,7 @@
 # Toluva — Product, Architecture, and Win Plan
 
 Last updated: August 1, 2026
-Status: source v11 controlled proof complete; final captioned German MP4 and synthetic-voice disclosure verified; 3/4 ElevenLabs calls and 189/320 characters used
+Status: source v11 controlled proof complete and wired into the judge view; final captioned German MP4, three-segment timing evidence, nine manifests, and synthetic-voice disclosure verified; 3/4 ElevenLabs calls and 189/320 characters used
 Submission deadline: August 3, 2026 at 10:00 p.m. WAT  
 Internal submission target: August 3, 2026 at 6:00 p.m. WAT
 
@@ -659,7 +659,7 @@ The user sees:
 ### Must have
 
 - [x] Stable hosted web application
-- [ ] Preloaded judge-friendly sample
+- [x] Preloaded judge-friendly sample
 - [x] Source-video upload or ingest
 - [x] B2 source storage
 - [x] Timed transcription
@@ -676,7 +676,7 @@ The user sees:
 - [x] Drift classification
 - [x] Bounded rewrite/regeneration loop
 - [x] Multi-segment correction and source-timed audio assembly contract
-- [ ] Controlled multi-segment production run
+- [x] Controlled multi-segment production run
 - [x] Captions
 - [x] Final media composition
 - [x] B2 storage for intermediates and finals
@@ -2225,6 +2225,32 @@ Final controlled-proof evidence:
   ElevenLabs provider, authorization binding, and human approval required
   before publish. The earlier failed stage and `99-failed` event remain
   preserved as honest lineage.
+
+### 2026-08-01 — Controlled proof promoted into the judge view
+
+Decision: Replace the legacy four-second development snapshot with the accepted
+12.419-second controlled proof as the preloaded project. Keep the existing
+upload, durable queue, transcript-review, timing-review, and same-job recovery
+paths unchanged. Restrict the verified sample bridge to the exact controlled
+project prefix rather than widening it to arbitrary B2 projects.
+
+Evidence: The live server bridge reads the immutable final record and derives
+all three timing rows from its embedded segment results. It loads and verifies
+nine Genblaze manifests: one transcription, three translations, three speech
+runs, one source-timed audio fan-in, and one composition. The default snapshot
+mirrors the same source/final hashes, three calls, 189 characters, two silence
+pads, one `1.0448980952` tempo fit, 60 job objects, authorization, and synthetic
+voice disclosure so a temporary B2 read failure cannot replace evidence with
+invented data.
+
+The built production route returned `live-b2`, 12.419 seconds, three segments,
+nine manifests, 60 job objects, three TTS calls, 189 characters, the exact
+tempo factor, and final SHA-256
+`369f3eea954c2bba91bd7a65cade78a86a9f9e1050cf915702e9a2da2e3917fe`.
+UI lint, the Vinext production build, and all 10 rendered-server tests passed.
+The social preview now depicts the same three-segment controlled proof. This
+source state is the release candidate for owner-only private Sites version 16.
+No Whisper, Argos, ElevenLabs, FFmpeg, or new intake job ran during this work.
 
 ## 22. Official References
 

@@ -1606,8 +1606,13 @@ button:disabled {
   text-transform: uppercase;
 }
 
-.segment-review {
+.segment-review,
+.segment-amber {
   background: rgba(217, 141, 43, 0.06);
+}
+
+.segment-green {
+  background: rgba(19, 118, 92, 0.05);
 }
 
 .segment-id strong,
@@ -1660,6 +1665,10 @@ button:disabled {
 
 .drift-amber {
   color: #a45a16;
+}
+
+.drift-green {
+  color: var(--mint-dark);
 }
 
 .correction-note {

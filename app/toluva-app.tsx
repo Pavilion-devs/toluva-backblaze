@@ -98,6 +98,14 @@ function seconds(value: number) {
   return `${value.toFixed(3)}s`;
 }
 
+function timestamp(value: number) {
+  const minutes = Math.floor(value / 60);
+  const remaining = value - minutes * 60;
+  return `${String(minutes).padStart(2, "0")}:${remaining
+    .toFixed(3)
+    .padStart(6, "0")}`;
+}
+
 function percent(value: number) {
   const prefix = value > 0 ? "+" : value < 0 ? "−" : "";
   return `${prefix}${Math.abs(value * 100).toFixed(2)}%`;
@@ -1024,14 +1032,18 @@ export function ToluvaApp() {
               <div className="eyebrow-row">
                 <span className="eyebrow">VERIFIED ENGINE RUN</span>
                 <span className="version-chip">{run.job.version}</span>
-                <span className="development-chip">DEVELOPMENT SAMPLE</span>
+                <span className="development-chip">
+                  {run.project.developmentSample
+                    ? "DEVELOPMENT SAMPLE"
+                    : "CONTROLLED PROOF"}
+                </span>
               </div>
               <h1 id="project-title">{run.project.title}</h1>
               <p>
-                A real English-to-German localization run with timed
-                transcription, protected-term translation, authorized
-                synthetic speech, timing QA, captions, composition, and
-                independently verified B2 output.
+                A real 12.419-second English-to-German localization run. Three
+                timed segments, authorized synthetic speech, measured drift,
+                bounded tempo-fit, captions, composition, and independently
+                verified B2 output.
               </p>
             </div>
             <div className="project-actions">
@@ -1203,9 +1215,9 @@ export function ToluvaApp() {
               <small>German · complete engine path</small>
             </article>
             <article className="metric-card metric-card-amber">
-              <span>TIMING DRIFT</span>
-              <strong>{percent(run.timing.driftRatio)}</strong>
-              <small>{readableAction(run.timing.action)} · no stretch</small>
+              <span>TIMING QA</span>
+              <strong>{run.timing.segments.length} segments</strong>
+              <small>2 padded · 1 bounded tempo-fit</small>
             </article>
             <article className="metric-card">
               <span>B2 JOB OBJECTS</span>
@@ -1214,8 +1226,8 @@ export function ToluvaApp() {
             </article>
             <article className="metric-card">
               <span>MANIFESTS</span>
-              <strong>{run.manifests.length}/4</strong>
-              <small>Transcription through composition</small>
+              <strong>{run.manifests.length}/9</strong>
+              <small>Every production run verified</small>
             </article>
           </section>
 
@@ -1249,7 +1261,7 @@ export function ToluvaApp() {
               <div className="pipeline-footer">
                 <span>
                   <i className="legend-dot legend-genblaze" />
-                  Four Genblaze runs
+                  {run.manifests.length} Genblaze runs
                 </span>
                 <span>
                   <i className="legend-dot legend-b2" />
@@ -1348,10 +1360,9 @@ export function ToluvaApp() {
                   <div>
                     <span className="language-code language-de">DE</span>
                     <span>
-                      <strong>German timing report · segment-001</strong>
+                      <strong>German timing report · 3 measured segments</strong>
                       <small>
-                        Measured speech duration against the 4.000-second source
-                        slot
+                        Generated speech measured against every source slot
                       </small>
                     </span>
                   </div>
@@ -1377,42 +1388,54 @@ export function ToluvaApp() {
                     <span>Final</span>
                     <span>Drift</span>
                   </div>
-                  <div className="segment-row segment-review">
-                    <span className="segment-id">
-                      <strong>segment-001</strong>
-                      <small>00:00.000 – 00:04.000</small>
-                    </span>
-                    <span className="segment-copy">
-                      <small>{run.source.text}</small>
-                      <strong>{run.edition.translatedText}</strong>
-                    </span>
-                    <span>{seconds(run.timing.slotSeconds)}</span>
-                    <span>{seconds(run.timing.generatedSeconds)}</span>
-                    <span>{seconds(run.edition.finalDurationSeconds)}</span>
-                    <span
-                      className={`drift-pill drift-${run.timing.band}`}
-                      title={`${run.timing.attemptCount} explicit TTS attempt`}
+                  {run.timing.segments.map((segment) => (
+                    <div
+                      className={`segment-row segment-${segment.band}`}
+                      key={segment.id}
                     >
-                      {percent(run.timing.driftRatio)}
-                    </span>
-                  </div>
+                      <span className="segment-id">
+                        <strong>{segment.id}</strong>
+                        <small>
+                          {timestamp(segment.startSeconds)} –{" "}
+                          {timestamp(segment.endSeconds)}
+                        </small>
+                      </span>
+                      <span className="segment-copy">
+                        <small>{segment.sourceText}</small>
+                        <strong>{segment.translatedText}</strong>
+                      </span>
+                      <span>{seconds(segment.endSeconds - segment.startSeconds)}</span>
+                      <span>{seconds(segment.generatedSeconds)}</span>
+                      <span>{seconds(segment.finalSeconds)}</span>
+                      <span
+                        className={`drift-pill drift-${segment.band}`}
+                        title={
+                          segment.tempoFactor > 1.000001
+                            ? `${segment.tempoFactor.toFixed(4)}× bounded tempo-fit`
+                            : `${segment.attemptCount} explicit TTS attempt`
+                        }
+                      >
+                        {percent(segment.driftRatio)}
+                      </span>
+                    </div>
+                  ))}
                 </div>
 
                 <div className="correction-note">
                   <span className="correction-icon">↘</span>
                   <div>
-                    <strong>Natural silence padding selected</strong>
+                    <strong>Source timing preserved with measured correction</strong>
                     <p>
-                      German speech finished{" "}
-                      {Math.abs(run.timing.driftSeconds).toFixed(3)} seconds
-                      early. The measured drift stayed inside the amber band,
-                      so Toluva preserved the delivery and padded the remainder
-                      instead of stretching the voice or spending another TTS
-                      call.
+                      Segments 1 and 3 kept their natural delivery and received
+                      silence padding. Segment 2 ran 4.49% long, so the audio
+                      fan-in applied a bounded 1.0449× tempo fit. No extra TTS
+                      call was needed, and every segment still lands on its
+                      original boundary.
                     </p>
                   </div>
                   <span className="lineage-chip">
-                    {run.timing.attemptCount} TTS ATTEMPT
+                    {run.timing.attemptCount} TTS CALLS ·{" "}
+                    {run.timing.generatedCharacters} CHARS
                   </span>
                 </div>
               </div>
@@ -1473,14 +1496,16 @@ export function ToluvaApp() {
                     <div>
                       <span className="manifest-check">✓</span>
                       <span>
-                        <strong>Four canonical manifests verified</strong>
+                        <strong>{run.manifests.length} canonical manifests verified</strong>
                         <small>
-                          Transcription, translation, speech, and composition
-                          lineage loaded from B2
+                          Transcription, three translations, three speech runs,
+                          audio fan-in, and composition loaded from B2
                         </small>
                       </span>
                     </div>
-                    <span className="verified-chip">4 / 4 VALID</span>
+                    <span className="verified-chip">
+                      {run.manifests.length} / 9 VALID
+                    </span>
                   </div>
                   <div className="manifest-list">
                     {run.manifests.map((manifest) => (

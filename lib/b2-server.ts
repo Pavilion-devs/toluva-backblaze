@@ -1,7 +1,8 @@
 import "server-only";
 
 const PROJECTS_PREFIX = "projects/";
-const VERIFIED_PREFIX = "projects/live-localization-project/";
+const VERIFIED_PREFIX =
+  "projects/intake-57f5ca73b1fb4b4d97e85f94605f39e5/";
 const AUTHORIZE_URL =
   "https://api.backblazeb2.com/b2api/v4/b2_authorize_account";
 const AUTH_CACHE_MILLISECONDS = 30 * 60 * 1000;

@@ -36,17 +36,21 @@ test("server-renders the Toluva product shell", async () => {
 
   const html = await response.text();
   assert.match(html, /<title>Toluva — Governed video localization<\/title>/i);
-  assert.match(html, /One message, many languages/);
+  assert.match(html, /One video, safely localized/);
   assert.match(html, /VERIFIED ENGINE RUN/);
-  assert.match(html, /DEVELOPMENT SAMPLE/);
+  assert.match(html, /CONTROLLED PROOF/);
   assert.match(html, /VOICE CONTROL/);
   assert.match(html, /Localization pipeline/);
   assert.match(html, /Verified run workbench/);
   assert.match(html, /Backblaze B2/);
   assert.match(html, /Genblaze/);
-  assert.match(html, /Willkommen bei Toluva/);
+  assert.match(html, /Ein Video kann jedes Team erreichen/);
+  assert.match(html, /3 measured segments/);
+  assert.match(html, /1 bounded tempo-fit/);
+  assert.match(html, /MANIFESTS/);
   assert.match(html, /New localization/);
   assert.doesNotMatch(html, /Leadership onboarding/);
+  assert.doesNotMatch(html, /DEVELOPMENT SAMPLE/);
   assert.doesNotMatch(html, /prepared demonstration data/i);
   assert.doesNotMatch(html, /codex-preview/);
   assert.doesNotMatch(html, /Your site is taking shape/);
