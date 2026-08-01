@@ -111,9 +111,10 @@ A user requests a Japanese cloned-voice edition, but the consent record covers
 only French and Spanish. Toluva blocks the job, shows the exact policy mismatch,
 and does not call the billable provider.
 
-The final demo languages are not yet locked. These examples are provisional
-until the provider spike verifies API access, voice quality, and language
-support.
+The submitted production lane is locked to English-to-German. French, Spanish,
+and Japanese remain visible only as authorization-policy requests that fail
+closed when the stored voice record does not cover them; they are not presented
+as generated editions.
 
 ## 4. Judging Strategy
 
@@ -668,7 +669,8 @@ The user sees:
 - [x] Immutable, hash-bound transcript correction and same-job resume
 - [x] Voice-authorization record
 - [x] Pre-generation authorization gate
-- [ ] Target-language selection
+- [x] Target-language request selection with a server-backed policy decision;
+      German is the one verified production lane
 - [x] Protected terminology
 - [x] Translation
 - [x] Genblaze TTS generation
@@ -1489,7 +1491,8 @@ Resolve during scaffolding or the first spike:
 
 - [x] Web framework — Next.js 16 UI compiled by Vinext for Cloudflare/Sites
 - [x] API framework — Python 3.12 with FastAPI
-- [ ] Metadata database
+- [x] Metadata authority — Backblaze B2 append-only records; no separate
+      relational database is required for the submitted single-project lane
 - [x] Job queue/worker approach — append-only Backblaze B2 queue and Python
       consumer
 - [x] Worker hosting architecture — exactly one continuously polling,
@@ -1503,18 +1506,22 @@ Resolve during scaffolding or the first spike:
       `translate-en_de` package 1.3
 - [x] Primary TTS provider/model — ElevenLabs through Genblaze using
       `eleven_flash_v2_5` and the verified stock voice
-- [ ] Fallback TTS provider/model
-- [ ] Voice type used in the demo
-- [ ] Paid TTS plan
-- [ ] Final target languages
+- [x] Fallback TTS provider/model — none in the submitted lane; fail closed and
+      preserve the last B2 checkpoint instead of changing voice identity
+- [x] Voice type used in the demo — disclosed ElevenLabs stock synthetic voice
+- [x] Paid TTS plan — no purchase required for the verified cached proof
+- [x] Final target languages — German is the one submitted production lane
 - [ ] Source sample and rights
 - [x] Media composition implementation — Genblaze video/audio/caption fan-in
       through FFmpeg verified; final licensed sample still required
-- [ ] Exact tempo-adjustment limit
-- [ ] Visible disclosure format
+- [x] Exact tempo-adjustment limit — maximum 1.08× speed-up; never slow an
+      underlength attempt
+- [x] Visible disclosure format — product disclosure panel plus machine-readable
+      B2 disclosure record
 - [x] Manifest strategy — canonical sidecar is required first; embedding may be
       added only after final-container compatibility testing
-- [ ] Authentication versus public judge-demo mode
+- [x] Authentication versus public judge-demo mode — public, no-auth,
+      read-only judge view; operator writes remain disabled by default
 
 ## 21. Decision Log
 
@@ -2251,6 +2258,34 @@ UI lint, the Vinext production build, and all 10 rendered-server tests passed.
 The social preview now depicts the same three-segment controlled proof. This
 source state is the release candidate for owner-only private Sites version 16.
 No Whisper, Argos, ElevenLabs, FFmpeg, or new intake job ran during this work.
+
+### 2026-08-01 — Public judge release boundary
+
+Decision: Publish a no-auth, read-only judge view. Keep every upload, transcript
+approval, and timing approval route disabled unless
+`TOLUVA_ENABLE_LIVE_INTAKE=true` is deliberately set in a private operator
+environment. Public visitors may read the fixed verified project, stream the
+German final, play the two allowlisted correction attempts, and evaluate the
+stored voice policy. They may not mutate B2 or trigger provider spend.
+
+The authorization interaction now calls a server route that loads the exact B2
+authorization record, validates its evidence hash and validity window, and
+returns an allowed or blocked decision with `providerCalled: false`. The
+signature timing card exposes the real 8.126984-second red attempt and
+3.575873-second green attempt, their verified hashes, and the Genblaze
+parent/child relationship. This reuses existing provider output and spends no
+new credits.
+
+Rights boundary: the controlled English source uses a macOS Samantha
+development voice. Public judge mode does not proxy that audio. It serves the
+H.264-only derivative `public/judge-source-muted.mp4`, SHA-256
+`a5c45de244e38bfdad6f60996c375a43c77185e90e6de9c7148a5931cc86fb7f`, while
+the immutable source stays private B2 engine evidence. Final Devpost narration
+must be an entrant recording or separately licensed voice.
+
+Repository documentation was reconciled around the current 12.419-second run,
+nine manifests, 60 job objects, one verified German lane, public safety model,
+provider/model inventory, architecture, licensing, and media-rights ledger.
 
 ## 22. Official References
 

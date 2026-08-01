@@ -36,9 +36,9 @@ test("server-renders the Toluva product shell", async () => {
 
   const html = await response.text();
   assert.match(html, /<title>Toluva — Governed video localization<\/title>/i);
-  assert.match(html, /One video, safely localized/);
+  assert.match(html, /One governed German edition/);
   assert.match(html, /VERIFIED ENGINE RUN/);
-  assert.match(html, /CONTROLLED PROOF/);
+  assert.match(html, /CONTROLLED ENGINE SAMPLE/);
   assert.match(html, /VOICE CONTROL/);
   assert.match(html, /Localization pipeline/);
   assert.match(html, /Verified run workbench/);
@@ -47,8 +47,11 @@ test("server-renders the Toluva product shell", async () => {
   assert.match(html, /Ein Video kann jedes Team erreichen/);
   assert.match(html, /3 measured segments/);
   assert.match(html, /1 bounded tempo-fit/);
+  assert.match(html, /SIGNATURE CORRECTION PROOF/);
+  assert.match(html, /Measured red → approved rewrite → verified green/);
+  assert.match(html, /READ-ONLY JUDGE MODE/);
   assert.match(html, /MANIFESTS/);
-  assert.match(html, /New localization/);
+  assert.doesNotMatch(html, /New localization/);
   assert.doesNotMatch(html, /Leadership onboarding/);
   assert.doesNotMatch(html, /DEVELOPMENT SAMPLE/);
   assert.doesNotMatch(html, /prepared demonstration data/i);
@@ -91,6 +94,16 @@ test("rejects media kinds outside the verified allowlist", async () => {
   });
 });
 
+test("withholds the system-voice source audio in public judge mode", async () => {
+  const response = await render("/api/media?kind=source");
+  assert.equal(response.status, 403);
+  assert.deepEqual(await response.json(), {
+    error: "source_audio_withheld",
+    message:
+      "Public judge mode serves an audio-free source preview while preserving the immutable source master privately in B2.",
+  });
+});
+
 test("rejects malformed durable job handles before a B2 read", async () => {
   const response = await render(
     "/api/job-status?project=../../private&job=not-a-job",
@@ -112,10 +125,11 @@ test("rejects malformed transcript approvals before a B2 write", async () => {
     headers: { "content-type": "application/json" },
     method: "POST",
   });
-  assert.equal(response.status, 400);
+  assert.equal(response.status, 403);
   assert.deepEqual(await response.json(), {
-    error: "invalid_job_handle",
-    message: "The transcript correction did not meet the review contract.",
+    error: "judge_mode_read_only",
+    message:
+      "Public judge mode is read-only so anonymous visitors cannot spend provider credits or mutate B2 evidence.",
     ok: false,
   });
 });
@@ -130,11 +144,33 @@ test("rejects malformed timing approvals before a B2 write", async () => {
     headers: { "content-type": "application/json" },
     method: "POST",
   });
+  assert.equal(response.status, 403);
+  assert.deepEqual(await response.json(), {
+    error: "judge_mode_read_only",
+    message:
+      "Public judge mode is read-only so anonymous visitors cannot spend provider credits or mutate B2 evidence.",
+    ok: false,
+  });
+});
+
+test("rejects malformed authorization checks before a B2 read", async () => {
+  const response = await render("/api/authorization", {
+    body: JSON.stringify({ language: "../../private", purpose: "anything" }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
   assert.equal(response.status, 400);
   assert.deepEqual(await response.json(), {
-    error: "invalid_job_handle",
-    message: "The wording did not meet the timing-review contract.",
+    error: "authorization_request_invalid",
     ok: false,
+  });
+});
+
+test("allows only the two fixed correction-audio attempts", async () => {
+  const response = await render("/api/correction-audio?attempt=3");
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), {
+    error: "unsupported_correction_attempt",
   });
 });
 
@@ -172,7 +208,7 @@ test("removes starter-only assets and metadata", async () => {
     readFile(new URL("../package.json", import.meta.url), "utf8"),
   ]);
 
-  assert.match(page, /<ToluvaApp \/>/);
+  assert.match(page, /<ToluvaApp liveIntakeEnabled=\{liveIntakeEnabled\(\)\} \/>/);
   assert.match(layout, /Toluva — Governed video localization/);
   assert.match(layout, /og\.png/);
   assert.doesNotMatch(layout, /codex-preview|Starter Project/);

@@ -42,6 +42,32 @@ export type TimingSegment = {
   wordTimingCount: number;
 };
 
+export type TimingCorrectionAttempt = {
+  attemptNumber: number;
+  band: "red" | "green";
+  canonicalHash: string;
+  driftRatio: number;
+  generatedSeconds: number;
+  manifestVerified: boolean;
+  parentRunId: string | null;
+  provider: string;
+  runId: string;
+  storedAssetHashMatches: boolean;
+  translatedText: string;
+  wordTimingCount: number;
+};
+
+export type TimingCorrectionProof = {
+  attempts: TimingCorrectionAttempt[];
+  jobId: string;
+  protectedTerms: string[];
+  rewriteSource: string;
+  selectedAttemptNumber: number;
+  slotSeconds: number;
+  totalGeneratedCharacters: number;
+  verificationState: "verified-b2-archive";
+};
+
 export type VerifiedRun = {
   dataSource: RunDataSource;
   syncedAt: string;
@@ -86,10 +112,13 @@ export type VerifiedRun = {
     allowedLanguages: string[];
     allowedPurposes: string[];
     approvedAt: string;
+    approvedBy: string;
     code: string;
     disclosure: string;
+    evidenceSha256: string;
     expiresAt: string;
     id: string;
+    validFrom: string;
     voiceType: string;
   };
   timing: {
@@ -121,6 +150,7 @@ export type VerifiedRun = {
   manifests: RunManifest[];
   assets: RunAsset[];
   b2ObjectCount: number;
+  timingCorrectionProof: TimingCorrectionProof;
 };
 
 const projectRoot =
@@ -218,10 +248,10 @@ export const VERIFIED_RUN_SNAPSHOT: VerifiedRun = {
   syncedAt: "2026-08-01T01:08:05.241078Z",
   project: {
     id: "intake-57f5ca73b1fb4b4d97e85f94605f39e5",
-    title: "One video, safely localized",
-    sourceKind: "Controlled 12.419-second production proof",
+    title: "One governed German edition",
+    sourceKind: "Controlled 12.419-second engine-validation source",
     sourceLanguage: "English",
-    developmentSample: false,
+    developmentSample: true,
   },
   job: {
     id: "localize-c33715df7d024a27950560095077ff52",
@@ -261,10 +291,14 @@ export const VERIFIED_RUN_SNAPSHOT: VerifiedRun = {
     allowedLanguages: ["de-DE"],
     allowedPurposes: ["internal-training"],
     approvedAt: "2026-07-29T00:00:00+00:00",
+    approvedBy: "toluva-spike-operator",
     code: "allowed",
     disclosure: "Synthetic stock voice used.",
+    evidenceSha256:
+      "577c35e2b7b11f22dd1882343089ee9a12b493692ca641f7d153e0e4bddf7137",
     expiresAt: "2026-08-12T00:00:00+00:00",
     id: "auth-stock-intake-v1",
+    validFrom: "2026-07-29T00:00:00+00:00",
     voiceType: "stock",
   },
   timing: {
@@ -428,4 +462,46 @@ export const VERIFIED_RUN_SNAPSHOT: VerifiedRun = {
     },
   ],
   b2ObjectCount: 60,
+  timingCorrectionProof: {
+    attempts: [
+      {
+        attemptNumber: 1,
+        band: "red",
+        canonicalHash:
+          "5d7a0390f080893324295c9b2a635490d79270e7acfb22ab28b63f6afbd7d9ed",
+        driftRatio: 1.1386800000000001,
+        generatedSeconds: 8.126984,
+        manifestVerified: true,
+        parentRunId: null,
+        provider: "elevenlabs-tts",
+        runId: "a9cc6c70-86ee-4e1c-8874-002c47c50c9a",
+        storedAssetHashMatches: true,
+        translatedText:
+          "Willkommen bei Toluva. Mit unserer Plattform wird eine einzige Videobotschaft automatisch in vielen verschiedenen Sprachen verfügbar.",
+        wordTimingCount: 16,
+      },
+      {
+        attemptNumber: 2,
+        band: "green",
+        canonicalHash:
+          "47743d1dca11711e286842019c33c2b82ac7b81eee09d6f9bebca37db1bd3644",
+        driftRatio: -0.058980789473684146,
+        generatedSeconds: 3.575873,
+        manifestVerified: true,
+        parentRunId: "a9cc6c70-86ee-4e1c-8874-002c47c50c9a",
+        provider: "elevenlabs-tts",
+        runId: "3e5cdd07-51e0-4784-90f0-f419b143f1c3",
+        storedAssetHashMatches: true,
+        translatedText: "Willkommen bei Toluva. Eine Botschaft, viele Sprachen.",
+        wordTimingCount: 7,
+      },
+    ],
+    jobId: "timing-red-green-v1",
+    protectedTerms: ["Toluva"],
+    rewriteSource: "human-reviewed-scripted-spike",
+    selectedAttemptNumber: 2,
+    slotSeconds: 3.8,
+    totalGeneratedCharacters: 187,
+    verificationState: "verified-b2-archive",
+  },
 };

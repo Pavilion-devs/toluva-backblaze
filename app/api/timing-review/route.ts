@@ -1,4 +1,8 @@
 import { approveTimingRevision } from "../../../lib/job-server";
+import {
+  judgeReadOnlyResponse,
+  liveIntakeEnabled,
+} from "../../../lib/runtime-mode";
 
 const ERROR_STATUS: Record<string, number> = {
   invalid_job_handle: 400,
@@ -16,6 +20,7 @@ export const dynamic = "force-dynamic";
 export const runtime = "edge";
 
 export async function POST(request: Request) {
+  if (!liveIntakeEnabled()) return judgeReadOnlyResponse();
   try {
     const input = (await request.json()) as {
       jobId?: unknown;

@@ -3,137 +3,158 @@
 Toluva is a governed video-localization workflow for enterprise training and
 communications teams.
 
-> One source. Multiple languages. Every voice authorized, every segment
-> time-fit, and every output verifiable.
+> Toluva turns one approved source video into time-aligned, consent-aware,
+> verifiable localized editions.
 
-This repository contains an interactive product view connected to a verified
-live pipeline. The hosted dashboard reads the completed English-to-German run
-from Backblaze B2 through a server-only bridge, while the Python service ingests
-source media, performs timed transcription and protected-term translation,
-enforces voice authorization, evaluates timing drift, calls ElevenLabs through
-Genblaze, and stores verified media and provenance in B2.
+The submitted deployment proves one complete English-to-German production
+lane. It does not claim universal language support, perfect lip sync, or
+automatic legal compliance.
 
-## What is implemented
+## Live judge experience
 
-- A source video and its governed language editions
-- Consent-bound synthetic-voice authorization
-- A pre-generation policy block for an unauthorized language or purpose
-- Segment-level timing-drift measurement
-- A bounded rewrite/regeneration story
-- Backblaze B2 asset-lifecycle visibility
-- Genblaze run and provenance visibility
-- Tested authorization rules for allowed, expired, revoked, wrong-language,
-  wrong-purpose, wrong-voice, and invalid-evidence cases
-- Tested timing policy at the exact green/amber/red boundaries
-- A provider-independent, bounded timing-correction engine with protected-term
-  enforcement, shorten/expand rewrites, silence-padding decisions, and human
-  review after retry exhaustion
-- Append-only B2 object-key construction and a scoped Genblaze B2 sink
-- A zero-cost Genblaze run with a canonical manifest and independent media-byte
-  hash verification
-- A live 54-character German ElevenLabs TTS run with word timestamps, B2-backed
-  audio, a canonical Genblaze manifest, and downloaded-byte verification
-- A live red-to-green timing proof: 8.126984 seconds against a 3.8-second slot
-  was shortened and regenerated to 3.575873 seconds, moving from +113.868%
-  red drift to -5.898079% green drift
-- Separate Genblaze manifests, verified audio hashes, parent/child run lineage,
-  translation revisions, QA records, and deterministic spend guards for every
-  correction attempt
-- Validated timed-transcript and segmentation records with deterministic
-  WebVTT caption generation
-- A deterministic pre-TTS transcript-quality gate that records confidence,
-  protected-term, and suspicious-tail evidence in B2; questionable transcripts
-  block before translation or ElevenLabs
-- An immutable, hash-bound operator-correction record that resumes the same job
-  without rewriting provider evidence or repeating transcription
-- An operator timing-revision panel that exposes the measured segment, target
-  duration, correction instruction, and protected terms; every approved
-  wording is cross-runtime hash-bound before the same job resumes
-- A real Genblaze composition fan-in over source video, the selected localized
-  audio, and captions
-- A verified 3.8-second H.264/AAC/`mov_text` MP4, B2-backed caption sidecar,
-  synthetic-media disclosure, and final publication record
-- A fixture-free English-to-German development slice: real local Whisper
-  word timestamps, real offline neural translation, one live ElevenLabs speech
-  attempt, timing QA, WebVTT captions, and a verified Genblaze composition
-- B2-backed provider intents and completions that reuse finished stages and
-  block ambiguous retries before they can duplicate provider spend
-- A verified 4.0-second H.264/AAC/`mov_text` German output whose four
-  transcription, translation, speech, and composition manifests all validate
-- A server-only Backblaze Native API bridge that exposes only sanitized records
-  and an allowlisted, range-capable source/final/caption media proxy
-- A dashboard driven by the genuine German transcript, Argos translation,
-  authorization scope, timing measurement, B2 object count, and four Genblaze
-  manifests
-- Source/final playback with WebVTT captions, completed-job replay from B2,
-  and an honest verified-snapshot fallback when the live read is unavailable
-- A FastAPI boundary for health, authorization, timing, and local spike runs
-- A governed 1–30 second MP4 intake that writes source, source record, immutable
-  queue request, and first status event directly to Backblaze B2
-- A B2 queue consumer that validates the uploaded source hash, runs the real
-  Genblaze engine, and appends visible progress or review-blocked stages
-- A persistent one-replica worker runtime with leased B2 heartbeats,
-  interruption recovery, bounded polling backoff, and graceful shutdown
-- A reproducible non-root Linux worker image with pinned CPU-only Python
-  dependencies, FFmpeg, Faster Whisper, and Argos model hashes
-- An always-on, isolated VPS deployment of that exact image with no inbound
-  port, a 1.5-CPU ceiling, a 2 GB memory ceiling, dropped capabilities, bounded
-  logs, root-only credentials, and systemd restart supervision
-- An honest dashboard worker indicator that shows online, busy, checking, or
-  queue-only state without exposing infrastructure credentials
-- Refresh-safe job polling and completed-job playback resolved from the new
-  job's immutable final record
+- Application: <https://toluva.asaborodaniel.chatgpt.site>
+- Source: <https://github.com/Pavilion-devs/toluva-backblaze>
+- Public mode is intentionally read-only. Judges can inspect the verified run,
+  compare the source visual with the German edition, play both timing attempts,
+  test an allowed or blocked voice-policy request, inspect B2 assets, and review
+  Genblaze lineage.
+- Anonymous visitors cannot create jobs, approve review records, mutate B2, or
+  spend provider credits.
+- The public English source preview is audio-free. The immutable engine source
+  used a locally generated development voice and remains private B2 evidence;
+  see [`docs/MEDIA_AND_RIGHTS.md`](docs/MEDIA_AND_RIGHTS.md).
 
-## Run locally
+## What is real
 
-Prerequisite: Node.js 22.13 or newer.
+The featured controlled run is not seeded product data:
+
+- 12.419-second English source processed into three timed segments
+- Faster Whisper `base.en` transcription
+- Argos Translate English-to-German model package `1.3`
+- ElevenLabs Flash v2.5 stock synthetic speech
+- Three actual TTS calls and 189 generated characters
+- Two silence-padded segments and one measured `1.0448980952×` tempo fit
+- H.264 video, AAC audio, embedded `mov_text` captions, and a WebVTT sidecar
+- 60 job-scoped Backblaze B2 objects
+- Nine Genblaze manifests: transcription, three translations, three speech
+  runs, localized-audio fan-in, and final composition
+- Final MP4 SHA-256:
+  `369f3eea954c2bba91bd7a65cade78a86a9f9e1050cf915702e9a2da2e3917fe`
+
+The interface also exposes a separate verified correction proof. An 8.126984s
+German attempt overran a 3.8s source slot by 113.868%. A protected-term-safe,
+human-approved shorter revision generated 3.575873s of speech and moved the
+segment to −5.898% green drift. Both audio objects, manifests, hashes, and the
+Genblaze parent/child run relationship remain inspectable.
+
+## Why B2 and Genblaze are necessary
+
+Backblaze B2 is the system of record, not a final-file dump. It stores source
+masters, authorization evidence, transcripts, quality decisions, translations,
+every speech attempt, captions, composition inputs, final renders, disclosure
+records, status events, checkpoints, and canonical manifests.
+
+Genblaze owns the visible generative-media orchestration. Toluva uses separate
+providers and runs for transcription, translation, speech generation,
+source-timed audio assembly, and three-input video composition. Every retry is
+append-only and may carry parent/child lineage; the application independently
+checks stored media hashes before describing bytes as verified.
+
+```mermaid
+flowchart LR
+    UI["Public judge app"] --> API["Server-only bridge"]
+    API --> B2["Backblaze B2 system of record"]
+    B2 --> WORKER["Single durable Python worker"]
+    WORKER --> STT["Faster Whisper"]
+    WORKER --> TR["Argos Translate"]
+    WORKER --> AUTH["Voice authorization gate"]
+    AUTH --> TTS["ElevenLabs via Genblaze"]
+    TTS --> QA["Measured timing QA"]
+    QA -->|outside threshold| REVIEW["Hash-bound human revision"]
+    REVIEW --> TTS
+    QA --> FANIN["Audio + captions + video fan-in"]
+    FANIN --> B2
+```
+
+## Provider and model inventory
+
+| Stage | Provider | Model/version |
+|---|---|---|
+| Transcription | Toluva Genblaze `SyncProvider` + Faster Whisper | `Systran/faster-whisper-base.en` revision `88b03866…` |
+| Translation | Toluva Genblaze `SyncProvider` + Argos Translate | `translate-en_de` package `1.3` |
+| Speech | Genblaze ElevenLabs provider | `eleven_flash_v2_5` stock voice |
+| Audio fan-in | Toluva Genblaze `SyncProvider` + FFmpeg | `ffmpeg-segment-audio-v2` |
+| Composition | Toluva Genblaze `SyncProvider` + FFmpeg | `ffmpeg-captioned-mp4-v1` |
+| Storage | Genblaze S3 sink + Backblaze Native API bridge | Backblaze B2 |
+
+Pinned Genblaze packages are `genblaze-core==0.3.8`,
+`genblaze-s3==0.3.6`, and `genblaze-elevenlabs==0.3.3`.
+
+## Repository map
+
+- `app/` — public judge interface and narrow server routes
+- `lib/` — B2 bridge, verified-run loader, job contracts, and policy evaluation
+- `services/pipeline/` — FastAPI/Genblaze pipeline, worker, providers, storage,
+  domain policy, and tests
+- `deploy/vps/` — isolated one-replica worker deployment contract
+- `docs/` — SDK feedback, media/rights ledger, and submission notes
+- `tests/` — rendered application and API boundary tests
+
+## Local setup
+
+Requirements:
+
+- Node.js 22.13 or newer
+- Python 3.12
+- `uv`
+- FFmpeg and FFprobe
 
 ```bash
 npm install
 npm run dev
 ```
 
-Copy `.env.example` to `.env.local` only when beginning the live provider
-integration. Never commit credential values.
+The app works in verified-snapshot mode without credentials. To read live B2
+records, copy `.env.example` to `.env.local` and provide a bucket-scoped key.
+Never commit `.env.local`.
 
-## Run the pipeline foundation
+The public deployment must keep `TOLUVA_ENABLE_LIVE_INTAKE=false`. Enable live
+intake only in a private operator environment after explicitly authorizing
+provider spend.
 
-Prerequisites: Python 3.12 and `uv`.
+## Pipeline setup and verification
 
 ```bash
 UV_CACHE_DIR=.uv-cache uv sync --project services/pipeline
 services/pipeline/.venv/bin/python -m pytest services/pipeline
-PYTHONPATH=services/pipeline/src \
-  services/pipeline/.venv/bin/python -m toluva_pipeline.cli local-provenance
+npm run lint
+npm run build
+node --test tests/rendered-html.test.mjs
 ```
 
-See `services/pipeline/README.md` for the API and credential-readiness commands.
-See `deploy/vps/README.md` for the isolated worker deployment and rollback
-contract.
+Ordinary automated tests mock external providers. Successful checkpoints are
+reused from B2; page loads never regenerate media.
 
-## Current boundaries
+See [`services/pipeline/README.md`](services/pipeline/README.md) for pipeline
+commands and [`deploy/vps/README.md`](deploy/vps/README.md) for the isolated
+worker contract.
 
-- The dashboard reads the real `english-to-german-v4` records and private media
-  from B2. A visible connection badge distinguishes live B2 data from the last
-  verified snapshot.
-- The browser never receives provider or storage credentials. The hosted
-  server-only bridge receives a read-capable, project-prefix-scoped B2 key as
-  encrypted runtime secrets; ElevenLabs remains worker-only.
-- Credential values are absent from tracked files.
-- The Python generation worker still runs separately from the hosted web app.
-  The UI launches a durable B2 job, displays its live status and completed
-  media, and reads a finite worker lease. The production worker is deployed as
-  exactly one isolated, continuously polling container on the selected VPS.
-  B2 remains the durable queue and the web app has no generation-provider
-  credential.
-- The new transcript and German translation are genuine model outputs, not
-  scripted fixtures. The source video is a clearly labelled, locally generated
-  development sample; an entrant-owned or licensed final demo video is still
-  required.
-- The timing thresholds remain configurable product defaults; the first live
-  red-to-green German sample has now validated the complete correction path.
-- Toluva is evidence-ready and compliance-supporting; it does not guarantee
-  legal or regulatory compliance.
+## Safety and integrity boundaries
 
-Read `AGENTS.md` before making changes. `plan.md` is the full product,
-architecture, delivery, and submission source of truth.
+- B2 and provider credentials never reach browser code.
+- Public write routes fail closed before upload, approval, or provider spend.
+- Media proxies accept fixed kinds or exact opaque job handles, never arbitrary
+  B2 keys.
+- Authorization evaluates language, purpose, validity, revocation, and the
+  stored evidence hash before generation.
+- A manifest proves recorded lineage and canonical integrity; it does not prove
+  every supplied fact or guarantee regulatory compliance.
+- Failed attempts and old stage records remain append-only evidence.
+
+## License and media notices
+
+Source code is available under the MIT License. Media, model outputs, provider
+services, and third-party dependencies remain subject to their respective
+terms. See [`LICENSE`](LICENSE),
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md), and
+[`docs/MEDIA_AND_RIGHTS.md`](docs/MEDIA_AND_RIGHTS.md).

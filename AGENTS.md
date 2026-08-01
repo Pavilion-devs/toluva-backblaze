@@ -225,7 +225,8 @@ The hosted read contract is:
 
 - Authorize with the Backblaze Native API only in server code.
 - Validate that the key has `readFiles`, the expected bucket, and a prefix that
-  covers `projects/live-localization-project/`.
+  covers `projects/` while the application itself restricts the featured read
+  path to `projects/intake-57f5ca73b1fb4b4d97e85f94605f39e5/`.
 - Reject any object key outside that exact verified project.
 - Resolve source, final, caption, and speech media from the immutable final
   record instead of accepting arbitrary browser-supplied keys.
@@ -289,6 +290,13 @@ The verified composition contract is:
   development sample. Its Whisper transcript and Argos translation are genuine
   model outputs, not scripted fixtures. It is still not the final
   entrant-owned or licensed demo video.
+- The current controlled 12.419-second source is also engine-validation media,
+  not final entrant voice media. Public judge mode must serve only the muted
+  `public/judge-source-muted.mp4` derivative; do not expose the macOS Samantha
+  development narration. The immutable source remains private B2 evidence.
+- Public judge mode is read-only. Keep `TOLUVA_ENABLE_LIVE_INTAKE=false` so
+  anonymous visitors cannot upload, approve records, mutate B2, or spend
+  provider credits.
 
 The verified fixture-free execution contract is:
 

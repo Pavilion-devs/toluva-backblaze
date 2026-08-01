@@ -1,5 +1,6 @@
 import { proxyB2Object } from "../../../lib/b2-server";
 import { verifiedMediaKey } from "../../../lib/verified-run-server";
+import { liveIntakeEnabled } from "../../../lib/runtime-mode";
 
 export const dynamic = "force-dynamic";
 
@@ -11,6 +12,16 @@ export async function GET(request: Request) {
     return Response.json(
       { error: "unsupported_verified_media_kind" },
       { status: 400 },
+    );
+  }
+  if (kind === "source" && !liveIntakeEnabled()) {
+    return Response.json(
+      {
+        error: "source_audio_withheld",
+        message:
+          "Public judge mode serves an audio-free source preview while preserving the immutable source master privately in B2.",
+      },
+      { headers: { "Cache-Control": "no-store" }, status: 403 },
     );
   }
 

@@ -340,10 +340,13 @@ export async function loadVerifiedRunFromB2(): Promise<VerifiedRun> {
       allowedLanguages: stringArray(authorization, "allowed_languages"),
       allowedPurposes: stringArray(authorization, "allowed_purposes"),
       approvedAt: text(authorization, "approved_at"),
+      approvedBy: text(authorization, "approved_by"),
       code: text(finalRecord, "authorization_code"),
       disclosure: text(authorization, "disclosure"),
+      evidenceSha256: text(authorization, "evidence_sha256"),
       expiresAt: text(authorization, "expires_at"),
       id: AUTHORIZATION_ID,
+      validFrom: text(authorization, "valid_from"),
       voiceType: text(authorization, "voice_type"),
     },
     timing: {

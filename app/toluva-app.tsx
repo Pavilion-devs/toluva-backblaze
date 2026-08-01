@@ -59,6 +59,23 @@ type TimingReview = {
   targetSeconds: number;
 };
 
+type AuthorizationDecision = {
+  allowed: boolean;
+  approvedAt: string;
+  approvedBy: string;
+  authorizationId: string;
+  code: string;
+  disclosure: string;
+  evaluatedAt: string;
+  evidenceSha256: string;
+  expiresAt: string;
+  providerCalled: false;
+  reason: string;
+  requestedLanguage: string;
+  requestedPurpose: string;
+  voiceType: string;
+};
+
 type ActiveJob = {
   events: JobEvent[];
   finalAvailable: boolean;
@@ -171,7 +188,11 @@ async function fetchJobStatus(
     ok?: boolean;
   };
   if (!response.ok || !payload.ok || !payload.job) {
-    throw new Error("job_status_unavailable");
+    throw new Error(
+      response.status === 404
+        ? "job_pointer_expired"
+        : "job_status_unavailable",
+    );
   }
   return payload.job;
 }
@@ -207,7 +228,11 @@ function StatusMark({
   );
 }
 
-export function ToluvaApp() {
+export function ToluvaApp({
+  liveIntakeEnabled,
+}: {
+  liveIntakeEnabled: boolean;
+}) {
   const [run, setRun] = useState<VerifiedRun>(VERIFIED_RUN_SNAPSHOT);
   const [connection, setConnection] =
     useState<ConnectionState>("checking");
@@ -221,8 +246,10 @@ export function ToluvaApp() {
     useState<LanguageCode>("de");
   const [purpose, setPurpose] = useState("internal-training");
   const [authorizationResult, setAuthorizationResult] = useState<
-    "idle" | "approved" | "blocked"
+    "idle" | "checking" | "approved" | "blocked" | "error"
   >("idle");
+  const [authorizationDecision, setAuthorizationDecision] =
+    useState<AuthorizationDecision | null>(null);
   const [selectedAsset, setSelectedAsset] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [sourceFile, setSourceFile] = useState<File | null>(null);
@@ -331,11 +358,21 @@ export function ToluvaApp() {
         .then((job) =>
           setActiveJob({ ...job, statusUrl: handle.statusUrl! }),
         )
-        .catch(() =>
+        .catch((error) => {
+          if (
+            error instanceof Error &&
+            error.message === "job_pointer_expired"
+          ) {
+            window.sessionStorage.removeItem(ACTIVE_JOB_STORAGE_KEY);
+            setStatusWarning(
+              "An expired saved job link was cleared from this browser.",
+            );
+            return;
+          }
           setStatusWarning(
             "The saved B2 job pointer could not be refreshed yet.",
-          ),
-        );
+          );
+        });
     } catch {
       window.sessionStorage.removeItem(ACTIVE_JOB_STORAGE_KEY);
     }
@@ -378,24 +415,40 @@ export function ToluvaApp() {
     setRequestedLanguage(language);
     setPurpose("internal-training");
     setAuthorizationResult("idle");
+    setAuthorizationDecision(null);
     setDialogOpen(true);
   }
 
-  function runAuthorizationCheck() {
-    if (
-      requestedLanguage !== "de" ||
-      purpose !== "internal-training"
-    ) {
-      setAuthorizationResult("blocked");
-      return;
+  async function runAuthorizationCheck() {
+    setAuthorizationResult("checking");
+    setAuthorizationDecision(null);
+    try {
+      const response = await fetch("/api/authorization", {
+        body: JSON.stringify({ language: requestedLanguage, purpose }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const payload = (await response.json()) as {
+        decision?: AuthorizationDecision;
+        ok?: boolean;
+      };
+      if (!response.ok || !payload.ok || !payload.decision) {
+        throw new Error("authorization_check_unavailable");
+      }
+      setAuthorizationDecision(payload.decision);
+      setAuthorizationResult(
+        payload.decision.allowed ? "approved" : "blocked",
+      );
+    } catch {
+      setAuthorizationResult("error");
     }
-    setAuthorizationResult("approved");
   }
 
   async function loadCompletedJob() {
     const loadedLive = await refreshRun();
     setDialogOpen(false);
     setAuthorizationResult("idle");
+    setAuthorizationDecision(null);
     setNotice(
       loadedLive
         ? "Completed job replayed from B2. No model or provider call was made."
@@ -406,6 +459,7 @@ export function ToluvaApp() {
   function resetDialog() {
     setDialogOpen(false);
     setAuthorizationResult("idle");
+    setAuthorizationDecision(null);
     setRequestedLanguage("de");
     setPurpose("internal-training");
   }
@@ -603,8 +657,12 @@ export function ToluvaApp() {
     mediaView === "source"
       ? {
           duration: run.source.durationSeconds,
-          label: "English source",
-          src: "/api/media?kind=source",
+          label: liveIntakeEnabled
+            ? "English source"
+            : "English source visual preview without audio",
+          src: liveIntakeEnabled
+            ? "/api/media?kind=source"
+            : "/judge-source-muted.mp4",
           text: run.source.text,
         }
       : {
@@ -677,7 +735,9 @@ export function ToluvaApp() {
           </span>
           <span>
             <strong>Toluva workspace</strong>
-            <small>Private engine view</small>
+            <small>
+              {liveIntakeEnabled ? "Operator engine view" : "Public judge view"}
+            </small>
           </span>
           <button
             className="icon-button"
@@ -736,13 +796,22 @@ export function ToluvaApp() {
               <span aria-hidden="true">↻</span>
               Replay proof
             </button>
-            <button
-              className="button button-primary"
-              onClick={() => setIntakeOpen(true)}
-            >
-              <span aria-hidden="true">＋</span>
-              New localization
-            </button>
+            {liveIntakeEnabled ? (
+              <button
+                className="button button-primary"
+                onClick={() => setIntakeOpen(true)}
+              >
+                <span aria-hidden="true">＋</span>
+                New localization
+              </button>
+            ) : (
+              <span
+                className="judge-mode-chip"
+                title="Public judge mode prevents anonymous B2 writes and provider spend."
+              >
+                READ-ONLY JUDGE MODE
+              </span>
+            )}
           </div>
         </header>
 
@@ -1034,8 +1103,8 @@ export function ToluvaApp() {
                 <span className="version-chip">{run.job.version}</span>
                 <span className="development-chip">
                   {run.project.developmentSample
-                    ? "DEVELOPMENT SAMPLE"
-                    : "CONTROLLED PROOF"}
+                    ? "CONTROLLED ENGINE SAMPLE"
+                    : "FINAL SOURCE"}
                 </span>
               </div>
               <h1 id="project-title">{run.project.title}</h1>
@@ -1102,6 +1171,7 @@ export function ToluvaApp() {
                     controls
                     key={`${mediaView}-${connection}`}
                     onError={() => setMediaError(true)}
+                    muted={mediaView === "source" && !liveIntakeEnabled}
                     playsInline
                     preload="metadata"
                     src={sourceOrFinal.src}
@@ -1155,11 +1225,17 @@ export function ToluvaApp() {
                   </strong>
                   <small>
                     {mediaView === "source"
-                      ? run.project.sourceKind
+                      ? liveIntakeEnabled
+                        ? run.project.sourceKind
+                        : "Muted public derivative · source master remains private B2 evidence"
                       : "H.264 · AAC · mov_text captions"}
                   </small>
                 </div>
-                <span className="verified-chip">✓ BYTES VERIFIED</span>
+                <span className="verified-chip">
+                  {mediaView === "source" && !liveIntakeEnabled
+                    ? "AUDIO WITHHELD"
+                    : "✓ BYTES VERIFIED"}
+                </span>
               </div>
             </article>
 
@@ -1181,7 +1257,7 @@ export function ToluvaApp() {
                 </div>
                 <div>
                   <dt>Approved use</dt>
-                  <dd>Internal training</dd>
+                  <dd>{run.authorization.allowedPurposes.join(" · ")}</dd>
                 </div>
                 <div>
                   <dt>Languages</dt>
@@ -1190,6 +1266,14 @@ export function ToluvaApp() {
                 <div>
                   <dt>Valid through</dt>
                   <dd>{dateLabel(run.authorization.expiresAt)}</dd>
+                </div>
+                <div>
+                  <dt>Evidence hash</dt>
+                  <dd>{shortHash(run.authorization.evidenceSha256)}</dd>
+                </div>
+                <div>
+                  <dt>Approved by</dt>
+                  <dd>{run.authorization.approvedBy}</dd>
                 </div>
               </dl>
 
@@ -1378,6 +1462,83 @@ export function ToluvaApp() {
                     </span>
                   </div>
                 </div>
+
+                <section
+                  aria-label="Verified red-to-green correction proof"
+                  className="correction-proof"
+                >
+                  <div className="correction-proof-heading">
+                    <div>
+                      <span className="meta-label">
+                        SIGNATURE CORRECTION PROOF
+                      </span>
+                      <strong>
+                        Measured red → approved rewrite → verified green
+                      </strong>
+                    </div>
+                    <span className="verified-chip">B2 VERIFIED ARCHIVE</span>
+                  </div>
+                  <div className="correction-attempts">
+                    {run.timingCorrectionProof.attempts.map((attempt) => (
+                      <article
+                        className={`correction-attempt correction-${attempt.band}`}
+                        key={attempt.attemptNumber}
+                      >
+                        <div className="correction-attempt-title">
+                          <span>ATTEMPT {attempt.attemptNumber}</span>
+                          <strong>{attempt.band.toUpperCase()}</strong>
+                        </div>
+                        <p>{attempt.translatedText}</p>
+                        <dl>
+                          <div>
+                            <dt>Generated</dt>
+                            <dd>{seconds(attempt.generatedSeconds)}</dd>
+                          </div>
+                          <div>
+                            <dt>Slot</dt>
+                            <dd>
+                              {seconds(run.timingCorrectionProof.slotSeconds)}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt>Drift</dt>
+                            <dd>{percent(attempt.driftRatio)}</dd>
+                          </div>
+                        </dl>
+                        <audio
+                          aria-label={`Correction attempt ${attempt.attemptNumber}`}
+                          controls
+                          preload="none"
+                          src={`/api/correction-audio?attempt=${attempt.attemptNumber}`}
+                        />
+                        <small>
+                          Run {shortHash(attempt.runId, 8, 5)} · manifest and
+                          stored bytes verified
+                        </small>
+                      </article>
+                    ))}
+                  </div>
+                  <div className="correction-lineage">
+                    <span>GENBLAZE PARENT/CHILD LINEAGE</span>
+                    <code>
+                      {shortHash(
+                        run.timingCorrectionProof.attempts[0].runId,
+                        8,
+                        5,
+                      )}
+                      {" → "}
+                      {shortHash(
+                        run.timingCorrectionProof.attempts[1].runId,
+                        8,
+                        5,
+                      )}
+                    </code>
+                    <strong>
+                      Protected term{" "}
+                      {run.timingCorrectionProof.protectedTerms.join(", ")} preserved
+                    </strong>
+                  </div>
+                </section>
 
                 <div className="segment-table live-segment-table">
                   <div className="segment-row segment-header">
@@ -1634,6 +1795,7 @@ export function ToluvaApp() {
                 onChange={(event) => {
                   setRequestedLanguage(event.target.value as LanguageCode);
                   setAuthorizationResult("idle");
+                  setAuthorizationDecision(null);
                 }}
                 value={requestedLanguage}
               >
@@ -1650,6 +1812,7 @@ export function ToluvaApp() {
                 onChange={(event) => {
                   setPurpose(event.target.value);
                   setAuthorizationResult("idle");
+                  setAuthorizationDecision(null);
                 }}
                 value={purpose}
               >
@@ -1674,9 +1837,12 @@ export function ToluvaApp() {
                 <div>
                   <strong>Authorized completed job found</strong>
                   <p>
-                    Loading it reuses the verified B2 checkpoint. Whisper,
-                    Argos, ElevenLabs, and FFmpeg will not run again.
+                    {authorizationDecision?.reason} Loading the completed job
+                    reuses its verified B2 checkpoint; no provider runs again.
                   </p>
+                  <code>
+                    Evidence {shortHash(authorizationDecision?.evidenceSha256 ?? "")}
+                  </code>
                 </div>
               </div>
             )}
@@ -1687,8 +1853,24 @@ export function ToluvaApp() {
                 <div>
                   <strong>Generation blocked before provider call</strong>
                   <p>
-                    The current voice record covers German internal training
-                    only. A new authorization is required for this request.
+                    {authorizationDecision?.reason} No billable provider was
+                    called.
+                  </p>
+                  <code>
+                    Decision {authorizationDecision?.code.replaceAll("_", " ")}
+                  </code>
+                </div>
+              </div>
+            )}
+
+            {authorizationResult === "error" && (
+              <div className="authorization-result result-blocked">
+                <span>!</span>
+                <div>
+                  <strong>Policy check stopped safely</strong>
+                  <p>
+                    Toluva could not verify the B2 authorization record, so it
+                    failed closed and made no provider call.
                   </p>
                 </div>
               </div>
@@ -1700,17 +1882,20 @@ export function ToluvaApp() {
               </button>
               <button
                 className="button button-primary"
+                disabled={authorizationResult === "checking"}
                 onClick={() => {
                   if (authorizationResult === "approved") {
                     void loadCompletedJob();
                   } else {
-                    runAuthorizationCheck();
+                    void runAuthorizationCheck();
                   }
                 }}
               >
-                {authorizationResult === "approved"
-                  ? "Load completed B2 job"
-                  : "Check authorization"}
+                {authorizationResult === "checking"
+                  ? "Checking B2 policy…"
+                  : authorizationResult === "approved"
+                    ? "Load completed B2 job"
+                    : "Check authorization"}
               </button>
             </div>
           </section>

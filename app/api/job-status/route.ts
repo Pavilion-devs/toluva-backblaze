@@ -33,17 +33,20 @@ export async function GET(request: Request) {
         },
       },
     );
-  } catch {
+  } catch (error) {
+    const code = error instanceof Error ? error.message : "";
+    const missing = code.endsWith("_404");
     return Response.json(
       {
-        error: "job_status_unavailable",
-        message:
-          "The durable B2 job exists, but its status is temporarily unavailable.",
+        error: missing ? "job_not_found" : "job_status_unavailable",
+        message: missing
+          ? "The saved job link no longer resolves to a durable B2 request."
+          : "The durable B2 job exists, but its status is temporarily unavailable.",
         ok: false,
       },
       {
         headers: { "Cache-Control": "no-store" },
-        status: 503,
+        status: missing ? 404 : 503,
       },
     );
   }
