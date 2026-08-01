@@ -102,7 +102,7 @@ export default function VoicePage() {
           eyebrow="Authorization record"
           title={run.authorization.id}
         >
-          <p className="mb-5 text-[14px] leading-relaxed text-slate-600">
+          <p className="mb-5 text-body leading-relaxed text-slate-600">
             Authorized for German internal training with a disclosed stock
             synthetic voice. Human approval is required before publishing.
           </p>
@@ -121,8 +121,8 @@ export default function VoicePage() {
                 className="flex items-baseline justify-between gap-4 py-2.5"
                 key={term}
               >
-                <dt className="shrink-0 text-[13px] text-slate-500">{term}</dt>
-                <dd className="text-right font-mono text-[13px] font-medium text-ink">
+                <dt className="shrink-0 text-body text-slate-500">{term}</dt>
+                <dd className="text-right font-mono text-body font-medium text-ink">
                   {value}
                 </dd>
               </div>
@@ -130,25 +130,25 @@ export default function VoicePage() {
           </dl>
           <div className="mt-5 rounded-2xl border border-slate-100 bg-cream p-4">
             <MetaLabel>Synthetic voice disclosure</MetaLabel>
-            <p className="text-[13px] leading-relaxed text-slate-600">
+            <p className="text-body leading-relaxed text-slate-600">
               {run.authorization.disclosure}
             </p>
           </div>
         </Panel>
 
         <Panel eyebrow="Policy boundary" title="Test a generation request">
-          <p className="mb-5 text-[14px] leading-relaxed text-slate-600">
+          <p className="mb-5 text-body leading-relaxed text-slate-600">
             Toluva evaluates language and purpose before any provider call. The
             completed German job can then be replayed directly from B2 without
             spending model credits.
           </p>
 
           <label className="mb-4 block">
-            <span className="mb-1.5 block text-[13px] font-semibold text-slate-700">
+            <span className="mb-1.5 block text-body font-semibold text-slate-700">
               Target language
             </span>
             <select
-              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-[14px] text-ink"
+              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-body text-ink"
               onChange={(event) => {
                 setLanguage(event.target.value);
                 reset();
@@ -164,11 +164,11 @@ export default function VoicePage() {
           </label>
 
           <label className="mb-5 block">
-            <span className="mb-1.5 block text-[13px] font-semibold text-slate-700">
+            <span className="mb-1.5 block text-body font-semibold text-slate-700">
               Publishing purpose
             </span>
             <select
-              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-[14px] text-ink"
+              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-body text-ink"
               onChange={(event) => {
                 setPurpose(event.target.value);
                 reset();
@@ -185,10 +185,10 @@ export default function VoicePage() {
 
           <div className="mb-5 rounded-2xl border border-slate-100 bg-cream p-4">
             <MetaLabel>Live authorization scope</MetaLabel>
-            <strong className="block font-mono text-[13px] text-ink">
+            <strong className="block font-mono text-body text-ink">
               DE-DE · INTERNAL TRAINING
             </strong>
-            <small className="mt-1 block text-[12px] text-slate-500">
+            <small className="mt-1 block text-caption text-slate-500">
               Stock synthetic voice · valid through{" "}
               {dateLabel(run.authorization.expiresAt)}
             </small>
@@ -196,14 +196,14 @@ export default function VoicePage() {
 
           {state === "approved" && decision && (
             <div className="mb-5 rounded-2xl border border-fit-green/25 bg-fit-green-soft p-4">
-              <strong className="block font-display text-[14px] text-fit-green">
+              <strong className="block font-display text-body text-fit-green">
                 Authorized completed job found
               </strong>
-              <p className="mt-1 text-[13px] leading-relaxed text-slate-700">
+              <p className="mt-1 text-body leading-relaxed text-slate-700">
                 {decision.reason} Loading the completed job reuses its verified
                 B2 checkpoint; no provider runs again.
               </p>
-              <code className="mt-2 block font-mono text-[12px] text-slate-600">
+              <code className="mt-2 block font-mono text-caption text-slate-600">
                 Evidence {shortHash(decision.evidenceSha256)}
               </code>
             </div>
@@ -211,13 +211,13 @@ export default function VoicePage() {
 
           {state === "blocked" && decision && (
             <div className="mb-5 rounded-2xl border border-fit-red/25 bg-fit-red-soft p-4">
-              <strong className="block font-display text-[14px] text-fit-red">
+              <strong className="block font-display text-body text-fit-red">
                 Generation blocked before provider call
               </strong>
-              <p className="mt-1 text-[13px] leading-relaxed text-slate-700">
+              <p className="mt-1 text-body leading-relaxed text-slate-700">
                 {decision.reason} No billable provider was called.
               </p>
-              <code className="mt-2 block font-mono text-[12px] text-slate-600">
+              <code className="mt-2 block font-mono text-caption text-slate-600">
                 Decision {decision.code.replaceAll("_", " ")}
               </code>
             </div>
@@ -225,10 +225,10 @@ export default function VoicePage() {
 
           {state === "error" && (
             <div className="mb-5 rounded-2xl border border-fit-red/25 bg-fit-red-soft p-4">
-              <strong className="block font-display text-[14px] text-fit-red">
+              <strong className="block font-display text-body text-fit-red">
                 Policy check stopped safely
               </strong>
-              <p className="mt-1 text-[13px] leading-relaxed text-slate-700">
+              <p className="mt-1 text-body leading-relaxed text-slate-700">
                 Toluva could not verify the B2 authorization record, so it
                 failed closed and made no provider call.
               </p>

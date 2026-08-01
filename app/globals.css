@@ -43,6 +43,23 @@
   --color-fit-red: #b8362b;
   --color-fit-red-soft: #fae2df;
 
+  /*
+   * Type scale. The workspace previously reached for arbitrary values
+   * (text-[13px], text-[14px], text-[15px]…) at almost every call site, which
+   * is why the density read as noise. These are the only sizes either surface
+   * should use.
+   */
+  --text-micro: 0.6875rem; /* 11px — dense metadata, hashes */
+  --text-micro--line-height: 1.45;
+  --text-label: 0.625rem; /* 10px — uppercase eyebrows */
+  --text-label--line-height: 1.4;
+  --text-caption: 0.75rem; /* 12px — captions, table cells */
+  --text-caption--line-height: 1.5;
+  --text-body: 0.875rem; /* 14px — workspace body */
+  --text-body--line-height: 1.6;
+  --text-lead: 0.9375rem; /* 15px — panel intros */
+  --text-lead--line-height: 1.65;
+
   --radius-card: 32px;
   --radius-panel: 40px;
 
@@ -52,6 +69,42 @@
   --animate-fade-in: fade-in 1s ease-out forwards;
   --animate-slide-up: slide-up 1s ease-out forwards;
   --animate-wheel: wheel 18s linear infinite;
+  --animate-indeterminate: indeterminate 1.15s ease-in-out infinite;
+  --animate-pulse-dot: pulse-dot 1.6s ease-in-out infinite;
+  --animate-sheet-in: sheet-in 0.22s cubic-bezier(0.32, 0.72, 0, 1);
+  --animate-scrim-in: fade-in 0.18s ease-out forwards;
+}
+
+@keyframes indeterminate {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(340%);
+  }
+}
+
+@keyframes pulse-dot {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.45;
+    transform: scale(0.82);
+  }
+}
+
+@keyframes sheet-in {
+  from {
+    opacity: 0;
+    transform: translateX(-14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 /* Half the duplicated stack, less half a gap, loops seamlessly. */
@@ -102,6 +155,31 @@ body {
   text-rendering: optimizeLegibility;
 }
 
+/* Headings are display type everywhere; stop re-declaring it per component. */
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--font-display);
+  text-wrap: balance;
+}
+
+p {
+  text-wrap: pretty;
+}
+
+/*
+ * Durations, drift percentages, and byte counts sit in columns and must not
+ * jitter between renders while a job polls.
+ */
+.font-mono,
+code,
+kbd,
+samp {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
 button,
 select,
 input,
@@ -121,13 +199,34 @@ button:focus-visible,
 a:focus-visible,
 select:focus-visible,
 input:focus-visible,
-textarea:focus-visible {
-  outline: 3px solid rgba(26, 26, 26, 0.35);
-  outline-offset: 3px;
+textarea:focus-visible,
+[role="button"]:focus-visible {
+  outline: 2px solid var(--color-ink);
+  outline-offset: 2px;
+  border-radius: 6px;
 }
 
 button {
   cursor: pointer;
+}
+
+/*
+ * Wide evidence tables scroll inside their own container. The mask fades the
+ * trailing edge so the overflow is discoverable instead of silently clipped.
+ */
+.scroll-x {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+}
+
+.scroll-x::-webkit-scrollbar {
+  height: 6px;
+}
+
+.scroll-x::-webkit-scrollbar-thumb {
+  background: rgba(26, 26, 26, 0.18);
+  border-radius: 999px;
 }
 
 /*
@@ -182,9 +281,17 @@ button {
 
   .animate-fade-in,
   .animate-slide-up,
-  .animate-wheel {
+  .animate-wheel,
+  .animate-indeterminate,
+  .animate-pulse-dot,
+  .animate-sheet-in,
+  .animate-scrim-in {
     animation: none;
     opacity: 1;
     transform: none;
+  }
+
+  * {
+    transition-duration: 0.01ms !important;
   }
 }

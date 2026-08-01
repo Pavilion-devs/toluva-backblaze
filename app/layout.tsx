@@ -43,7 +43,7 @@ export async function generateMetadata(): Promise<Metadata> {
     openGraph: {
       title: "Toluva — Governed video localization",
       description:
-        "A controlled 12.419-second proof: authorized voice, three time-fit segments, and nine verified manifests.",
+        "Upload one approved source video and get a time-aligned, consent-aware German edition with every stage recorded.",
       images: [
         {
           url: socialImage,

@@ -9,15 +9,11 @@ import {
   PageHeader,
   Panel,
 } from "../../_components/ui";
+import {
+  jobStateLabel,
+  jobStateTone,
+} from "../../_components/job-progress";
 import { useWorkspace } from "../../_components/workspace-data";
-
-const stateTone: Record<string, "green" | "amber" | "red" | "neutral"> = {
-  blocked: "red",
-  completed: "green",
-  failed: "red",
-  processing: "amber",
-  queued: "neutral",
-};
 
 export default function RunsPage() {
   const { activeJob, run } = useWorkspace();
@@ -40,20 +36,20 @@ export default function RunsPage() {
           className="group flex flex-wrap items-center gap-4 rounded-2xl border border-fit-green/25 bg-fit-green-soft p-4 transition-colors hover:border-fit-green/40"
           href="/workspace"
         >
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-fit-green font-mono text-[12px] font-bold text-white">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-fit-green font-mono text-caption font-bold text-white">
             DE
           </span>
           <span className="min-w-0 flex-1">
             <strong className="block font-display text-[15px] text-ink">
               {run.project.title}
             </strong>
-            <small className="block font-mono text-[12px] text-slate-600">
+            <small className="block font-mono text-caption text-slate-600">
               {run.job.id}
             </small>
           </span>
           <span className="text-right">
             <Chip tone="green">Completed</Chip>
-            <small className="mt-1 block text-[12px] text-slate-600">
+            <small className="mt-1 block text-caption text-slate-600">
               {seconds(run.edition.finalDurationSeconds)} ·{" "}
               {run.manifests.length} manifests
             </small>
@@ -73,22 +69,27 @@ export default function RunsPage() {
             className="group flex flex-wrap items-center gap-4 rounded-2xl border border-slate-200 bg-cream/60 p-4 transition-colors hover:bg-white"
             href={`/workspace/runs/${encodeURIComponent(activeJob.jobId)}`}
           >
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-200 font-mono text-[12px] font-bold text-slate-600">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-200 font-mono text-caption font-bold text-slate-600">
               {activeJob.request.target_language.slice(0, 2).toUpperCase()}
             </span>
             <span className="min-w-0 flex-1">
               <strong className="block truncate font-display text-[15px] text-ink">
                 {activeJob.request.source_filename}
               </strong>
-              <small className="block font-mono text-[12px] text-slate-600">
+              <small className="block font-mono text-caption text-slate-600">
                 {activeJob.jobId}
               </small>
             </span>
             <span className="text-right">
-              <Chip tone={stateTone[activeJob.state] ?? "neutral"}>
-                {activeJob.state}
+              <Chip
+                pulse={
+                  activeJob.state === "queued" || activeJob.state === "running"
+                }
+                tone={jobStateTone[activeJob.state] ?? "neutral"}
+              >
+                {jobStateLabel[activeJob.state] ?? activeJob.state}
               </Chip>
-              <small className="mt-1 block text-[12px] text-slate-600">
+              <small className="mt-1 block text-caption text-slate-600">
                 {megabytes(activeJob.request.source_size_bytes)} ·{" "}
                 {dateLabel(activeJob.request.created_at)}
               </small>
@@ -103,7 +104,7 @@ export default function RunsPage() {
         ) : (
           <div className="rounded-2xl border border-dashed border-slate-200 bg-cream/60 px-6 py-10 text-center">
             <MetaLabel>No tracked job</MetaLabel>
-            <p className="mx-auto max-w-md text-[13px] leading-relaxed text-slate-600">
+            <p className="mx-auto max-w-md text-body leading-relaxed text-slate-600">
               Queue a localization and its durable B2 job will appear here while
               this browser session tracks it.
             </p>

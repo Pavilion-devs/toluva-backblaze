@@ -35,11 +35,11 @@ const proofs = [
 export function ProofBand() {
   return (
     <section
-      className="w-full relative py-24 z-10 bg-cream border-t border-white/40"
+      className="w-full relative py-16 sm:py-20 md:py-24 z-10 bg-cream border-t border-white/40"
       id="evidence"
     >
-      <div className="max-w-4xl mx-auto px-6 text-center mb-20 relative z-10">
-        <h2 className="leading-[1.15] md:text-5xl text-3xl font-semibold text-ink tracking-tight font-display mb-10 drop-shadow-sm">
+      <div className="max-w-4xl mx-auto px-6 text-center mb-14 sm:mb-16 md:mb-20 relative z-10">
+        <h2 className="text-[30px] sm:text-4xl md:text-5xl leading-[1.15] font-semibold text-ink tracking-tight font-display mb-10 drop-shadow-sm">
           One approved source. One governed German edition. Every step on the
           record.
         </h2>
@@ -50,7 +50,7 @@ export function ProofBand() {
         </p>
       </div>
 
-      <div className="max-w-7xl mx-auto px-6 grid grid-cols-1 md:grid-cols-2 gap-6 lg:gap-8 mb-16">
+      <div className="max-w-7xl mx-auto px-6 grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6 lg:gap-8 mb-12 sm:mb-16">
         {proofs.map((proof) => (
           <div
             className="bg-white p-8 md:p-10 rounded-card shadow-sm border border-slate-100 hover:shadow-md transition-shadow duration-300"

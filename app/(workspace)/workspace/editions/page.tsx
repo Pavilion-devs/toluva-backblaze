@@ -47,7 +47,7 @@ export default function EditionsPage() {
                   key={language.code}
                 >
                   <span
-                    className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl font-mono text-[12px] font-bold ${
+                    className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl font-mono text-caption font-bold ${
                       isGerman
                         ? "bg-fit-green text-white"
                         : "bg-slate-200 text-slate-600"
@@ -56,16 +56,16 @@ export default function EditionsPage() {
                     {language.code.toUpperCase()}
                   </span>
                   <span className="min-w-0 flex-1">
-                    <strong className="block text-[14px] font-semibold text-ink">
+                    <strong className="block text-body font-semibold text-ink">
                       {language.name}
                     </strong>
-                    <small className="text-[12px] text-slate-500">
+                    <small className="text-caption text-slate-500">
                       {language.localName}
                     </small>
                   </span>
                   <span className="flex flex-col items-end gap-1">
                     <StatusMark status={isGerman ? "ready" : "blocked"} />
-                    <small className="text-[11px] text-slate-500">
+                    <small className="text-micro text-slate-500">
                       {isGerman
                         ? "Engine run complete"
                         : "Authorization required"}
@@ -100,7 +100,7 @@ export default function EditionsPage() {
           ].map(([term, value]) => (
             <div key={term}>
               <MetaLabel>{term}</MetaLabel>
-              <strong className="font-mono text-[14px] text-ink">
+              <strong className="font-mono text-body text-ink">
                 {value}
               </strong>
             </div>
@@ -108,7 +108,7 @@ export default function EditionsPage() {
         </dl>
         <div className="mt-5 rounded-2xl border border-slate-100 bg-cream p-4">
           <MetaLabel>Final MP4 SHA-256</MetaLabel>
-          <code className="block break-all font-mono text-[12px] leading-relaxed text-slate-700">
+          <code className="block break-all font-mono text-caption leading-relaxed text-slate-700">
             {run.edition.finalSha256}
           </code>
         </div>

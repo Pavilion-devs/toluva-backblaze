@@ -42,21 +42,21 @@ const smallCards = [
 export function FeatureGrid() {
   return (
     <section
-      className="md:px-12 z-10 w-full max-w-7xl mx-auto py-24 px-4 relative"
+      className="md:px-12 z-10 w-full max-w-7xl mx-auto py-16 sm:py-20 md:py-24 px-5 sm:px-6 relative"
       id="features"
     >
-      <div className="text-center max-w-3xl mx-auto mb-20 animate-fade-in">
+      <div className="text-center max-w-3xl mx-auto mb-14 sm:mb-16 md:mb-20 animate-fade-in">
         <span className="text-xs font-bold tracking-widest text-slate-500 uppercase mb-4 block">
           Under the hood
         </span>
-        <h2 className="md:text-[56px] leading-[1.1] text-4xl font-semibold text-ink tracking-tight font-display mb-6">
+        <h2 className="text-[32px] sm:text-4xl md:text-[56px] leading-[1.1] font-semibold text-ink tracking-tight font-display mb-6">
           Built so the receipts survive the demo
         </h2>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-        <div className="bg-[#F2EBE5] rounded-card p-8 md:p-12 flex flex-col justify-between hover:shadow-xl transition-all duration-500 hover:-translate-y-1 group border border-transparent hover:border-slate-200/50">
-          <h3 className="md:text-[28px] leading-tight text-2xl font-semibold text-ink font-display max-w-md mb-10">
+        <div className="bg-[#F2EBE5] rounded-card p-6 sm:p-8 md:p-12 flex flex-col justify-between hover:shadow-xl transition-all duration-500 hover:-translate-y-1 group border border-transparent hover:border-slate-200/50">
+          <h3 className="text-[22px] sm:text-2xl md:text-[28px] leading-tight font-semibold text-ink font-display max-w-md mb-10">
             Nine Genblaze runs, one verified composition
           </h3>
           <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-100/50 mb-10 relative overflow-hidden transition-transform duration-500 group-hover:scale-[1.02]">
@@ -96,8 +96,8 @@ export function FeatureGrid() {
           </p>
         </div>
 
-        <div className="bg-[#F2EBE5] rounded-card p-8 md:p-12 flex flex-col justify-between hover:shadow-xl transition-all duration-500 hover:-translate-y-1 group border border-transparent hover:border-slate-200/50 relative overflow-hidden">
-          <h3 className="md:text-[28px] leading-tight z-10 text-2xl font-semibold text-ink font-display max-w-md mb-10 relative">
+        <div className="bg-[#F2EBE5] rounded-card p-6 sm:p-8 md:p-12 flex flex-col justify-between hover:shadow-xl transition-all duration-500 hover:-translate-y-1 group border border-transparent hover:border-slate-200/50 relative overflow-hidden">
+          <h3 className="text-[22px] sm:text-2xl md:text-[28px] leading-tight z-10 font-semibold text-ink font-display max-w-md mb-10 relative">
             Backblaze B2 is the system of record, not a file dump
           </h3>
           <div className="flex flex-col gap-6 z-0 h-48 mb-6 relative justify-center overflow-hidden">
@@ -126,7 +126,7 @@ export function FeatureGrid() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
         {smallCards.map((card) => (
           <div
-            className="bg-[#F2EBE5] rounded-card p-8 md:p-10 flex flex-col items-start gap-4 hover:shadow-lg transition-all duration-300 hover:-translate-y-1 group"
+            className="bg-[#F2EBE5] rounded-card p-6 sm:p-8 md:p-10 flex flex-col items-start gap-4 hover:shadow-lg transition-all duration-300 hover:-translate-y-1 group"
             key={card.title}
           >
             <div className="w-12 h-12 rounded-full bg-white flex items-center justify-center mb-4 shadow-sm group-hover:scale-110 transition-transform">

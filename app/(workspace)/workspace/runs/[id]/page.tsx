@@ -11,29 +11,28 @@ import {
   MetaLabel,
   PageHeader,
   Panel,
+  Spinner,
 } from "../../../_components/ui";
+import {
+  JobProgressSummary,
+  jobStateLabel,
+  jobStateTone,
+  StageTimeline,
+} from "../../../_components/job-progress";
 import {
   useWorkspace,
   type ActiveJob,
 } from "../../../_components/workspace-data";
 
-const stateTone: Record<string, "green" | "amber" | "red" | "neutral"> = {
-  blocked: "red",
-  completed: "green",
-  failed: "red",
-  processing: "amber",
-  queued: "neutral",
-};
-
 type ReviewState = "idle" | "submitting" | "recorded" | "error";
 
 function Signals({ items }: { items: Array<[string, string]> }) {
   return (
-    <div className="mb-5 grid gap-4 sm:grid-cols-3">
+    <div className="mb-5 grid gap-4 rounded-2xl border border-slate-100 bg-cream/60 p-4 sm:grid-cols-3">
       {items.map(([label, value]) => (
-        <div key={label}>
+        <div className="min-w-0" key={label}>
           <MetaLabel>{label}</MetaLabel>
-          <strong className="text-[13px] font-semibold text-ink">
+          <strong className="block break-words text-caption font-semibold text-ink">
             {value}
           </strong>
         </div>
@@ -171,45 +170,51 @@ export default function RunDetailPage() {
   return (
     <div className="flex flex-col gap-8">
       <PageHeader
-        actions={<Chip tone={stateTone[job.state] ?? "neutral"}>{job.state}</Chip>}
+        actions={
+          <Chip
+            pulse={job.state === "queued" || job.state === "running"}
+            tone={jobStateTone[job.state] ?? "neutral"}
+          >
+            {jobStateLabel[job.state] ?? job.state}
+          </Chip>
+        }
         description={`English → German · queued ${dateLabel(job.request.created_at)} · ${megabytes(job.request.source_size_bytes)}`}
         eyebrow="Durable B2 job"
         title={job.request.source_filename}
       />
 
-      <Panel eyebrow="Append-only" title="Stage events">
-        <ol className="flex flex-col gap-2">
-          {job.events.map((event) => (
-            <li
-              className="flex items-start gap-3 rounded-2xl border border-slate-100 bg-cream/60 p-4"
-              key={`${event.sequence}-${event.stage}-${event.created_at}`}
-            >
-              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-200 font-mono text-[11px] font-bold text-slate-600">
-                {String(event.sequence).padStart(2, "0")}
-              </span>
-              <span className="min-w-0">
-                <strong className="block text-[14px] font-semibold text-ink">
-                  {event.label}
-                </strong>
-                <small className="text-[12px] text-slate-500">
-                  {event.message}
-                </small>
-              </span>
-            </li>
-          ))}
-        </ol>
-        <p className="mt-5 border-t border-slate-100 pt-4 text-[13px] text-slate-500">
-          {job.finalAvailable
-            ? "Final record is available in B2."
-            : "Polling append-only B2 stage records every 20 seconds."}
-        </p>
-        {(statusWarning ||
-          (job.state === "queued" && workerConnection === "offline")) && (
-          <p className="mt-2 text-[13px] font-semibold text-fit-amber">
-            {statusWarning ??
-              "Worker is offline; this job will remain safely queued."}
-          </p>
-        )}
+      <Panel eyebrow="Progress" title="Localization run">
+        <JobProgressSummary eventCount={job.events.length} state={job.state} />
+      </Panel>
+
+      <Panel
+        eyebrow="Append-only"
+        footer={
+          <div className="flex flex-col gap-1.5">
+            <p className="flex items-center gap-2 text-caption text-slate-500">
+              {job.state === "queued" || job.state === "running" ? (
+                <>
+                  <Spinner className="h-3.5 w-3.5" />
+                  Polling append-only B2 stage records every 20 seconds.
+                </>
+              ) : job.finalAvailable ? (
+                "Final record is available in B2."
+              ) : (
+                "This job is no longer advancing; its records remain durable."
+              )}
+            </p>
+            {(statusWarning ||
+              (job.state === "queued" && workerConnection === "offline")) && (
+              <p className="text-caption font-semibold text-fit-amber">
+                {statusWarning ??
+                  "Worker is offline; this job will remain safely queued."}
+              </p>
+            )}
+          </div>
+        }
+        title="Stage events"
+      >
+        <StageTimeline events={job.events} state={job.state} />
       </Panel>
 
       {job.state === "blocked" && job.transcriptReview && (
@@ -218,7 +223,7 @@ export default function RunDetailPage() {
           eyebrow="Pre-TTS quality gate"
           title="Transcript needs human review"
         >
-          <p className="mb-5 text-[14px] leading-relaxed text-slate-600">
+          <p className="mb-5 text-body leading-relaxed text-slate-600">
             Toluva stopped before translation and ElevenLabs. The original
             provider transcript remains immutable; an approved correction is
             stored as a separate B2 record.
@@ -239,23 +244,23 @@ export default function RunDetailPage() {
             ]}
           />
           <label className="block">
-            <span className="mb-1.5 block text-[13px] font-semibold text-slate-700">
+            <span className="mb-1.5 block text-body font-semibold text-slate-700">
               Correct transcript
             </span>
             <textarea
-              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-[14px] text-ink"
+              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-body text-ink"
               disabled={transcriptState === "submitting"}
               onChange={(event) => setCorrectedTranscript(event.target.value)}
               rows={3}
               value={transcriptValue}
             />
-            <small className="mt-1.5 block text-[12px] text-slate-500">
+            <small className="mt-1.5 block text-caption text-slate-500">
               Keep “Toluva” exact and remove unresolved trailing fragments.
               Approval resumes this same job.
             </small>
           </label>
           {transcriptError && (
-            <p className="mt-3 text-[13px] font-semibold text-fit-red">
+            <p className="mt-3 text-body font-semibold text-fit-red">
               {transcriptError}
             </p>
           )}
@@ -280,7 +285,7 @@ export default function RunDetailPage() {
           eyebrow="Timing-drift gate"
           title="Translation revision needs approval"
         >
-          <p className="mb-5 text-[14px] leading-relaxed text-slate-600">
+          <p className="mb-5 text-body leading-relaxed text-slate-600">
             Toluva preserved the measured speech attempt and stopped before
             another ElevenLabs call. An exact, hash-bound translation revision
             must be approved before this same job can resume.
@@ -299,11 +304,11 @@ export default function RunDetailPage() {
             ]}
           />
           <label className="block">
-            <span className="mb-1.5 block text-[13px] font-semibold text-slate-700">
+            <span className="mb-1.5 block text-body font-semibold text-slate-700">
               Approved German wording
             </span>
             <textarea
-              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-[14px] text-ink"
+              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-body text-ink"
               disabled={timingState === "submitting"}
               onChange={(event) =>
                 setRevised({
@@ -314,7 +319,7 @@ export default function RunDetailPage() {
               rows={3}
               value={timingValue}
             />
-            <small className="mt-1.5 block text-[12px] text-slate-500">
+            <small className="mt-1.5 block text-caption text-slate-500">
               {job.timingReview.instruction} Keep{" "}
               {job.timingReview.protectedTerms
                 .map((term) => `“${term}”`)
@@ -323,7 +328,7 @@ export default function RunDetailPage() {
             </small>
           </label>
           {timingError && (
-            <p className="mt-3 text-[13px] font-semibold text-fit-red">
+            <p className="mt-3 text-body font-semibold text-fit-red">
               {timingError}
             </p>
           )}
@@ -352,7 +357,7 @@ export default function RunDetailPage() {
             eyebrow="Governed review gate"
             title="Review details are unavailable"
           >
-            <p className="text-[14px] leading-relaxed text-slate-600">
+            <p className="text-body leading-relaxed text-slate-600">
               The job remains durably blocked in B2. No provider retry will run
               until its exact review record is available.
             </p>
@@ -361,7 +366,7 @@ export default function RunDetailPage() {
 
       {job.finalAvailable && (
         <Panel eyebrow="New localized output" title="German edition">
-          <p className="mb-4 text-[13px] text-slate-500">
+          <p className="mb-4 text-body text-slate-500">
             The player resolves media only from this job&apos;s immutable final
             record.
           </p>

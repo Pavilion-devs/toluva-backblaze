@@ -6,6 +6,7 @@ import { MediaCompare } from "../_components/media-compare";
 import {
   buttonClass,
   Chip,
+  DataList,
   MetaLabel,
   PageHeader,
   Panel,
@@ -41,7 +42,7 @@ export default function OverviewPage() {
   const metrics = [
     {
       detail: "German · complete engine path",
-      label: "Verified editions",
+      label: "Editions",
       value: "1",
     },
     {
@@ -62,7 +63,7 @@ export default function OverviewPage() {
   ];
 
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-col gap-7 md:gap-8">
       <PageHeader
         actions={
           <>
@@ -72,13 +73,13 @@ export default function OverviewPage() {
             >
               Compare editions
             </Link>
-            <Link className={buttonClass("primary")} href="/workspace/timing">
-              Inspect the proof
+            <Link className={buttonClass("primary")} href="/workspace/new">
+              Start your own
             </Link>
           </>
         }
-        description="A real 12.419-second English-to-German localization run. Three timed segments, authorized synthetic speech, measured drift, bounded tempo-fit, captions, composition, and independently verified B2 output."
-        eyebrow="Verified engine run"
+        description="A completed English-to-German run kept as a reference. Three timed segments, authorized synthetic speech, measured drift, bounded tempo-fit, captions, composition, and verified B2 output — the same path your own upload takes."
+        eyebrow="Example project"
         title={run.project.title}
       />
 
@@ -90,7 +91,7 @@ export default function OverviewPage() {
             : "Final source"}
         </Chip>
         <Chip tone={connection === "live" ? "green" : "neutral"}>
-          {connection === "live" ? "Live B2 run" : "Verified snapshot"}
+          {connection === "live" ? "Live B2 records" : "Stored snapshot"}
         </Chip>
       </div>
 
@@ -98,30 +99,20 @@ export default function OverviewPage() {
         <MediaCompare />
 
         <Panel eyebrow="Voice control" title="ElevenLabs stock voice">
-          <dl className="flex flex-col divide-y divide-slate-100">
-            {[
+          <DataList
+            items={[
               ["Voice type", run.authorization.voiceType],
               ["Approved use", run.authorization.allowedPurposes.join(" · ")],
               ["Languages", run.authorization.allowedLanguages.join(" · ")],
               ["Valid through", dateLabel(run.authorization.expiresAt)],
               ["Evidence hash", shortHash(run.authorization.evidenceSha256)],
               ["Approved by", run.authorization.approvedBy],
-            ].map(([term, value]) => (
-              <div
-                className="flex items-baseline justify-between gap-4 py-2.5"
-                key={term}
-              >
-                <dt className="shrink-0 text-[13px] text-slate-500">{term}</dt>
-                <dd className="text-right font-mono text-[13px] font-medium text-ink">
-                  {value}
-                </dd>
-              </div>
-            ))}
-          </dl>
+            ]}
+          />
 
           <div className="mt-5 rounded-2xl border border-slate-100 bg-cream p-4">
             <MetaLabel>Synthetic voice disclosure</MetaLabel>
-            <p className="text-[13px] leading-relaxed text-slate-600">
+            <p className="text-body text-slate-600">
               {run.authorization.disclosure}
             </p>
           </div>
@@ -135,17 +126,17 @@ export default function OverviewPage() {
         </Panel>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         {metrics.map((metric) => (
           <div
-            className="rounded-card border border-slate-200/70 bg-white p-5 shadow-sm"
+            className="rounded-card border border-slate-200/70 bg-white p-4 shadow-sm sm:p-5"
             key={metric.label}
           >
             <MetaLabel>{metric.label}</MetaLabel>
-            <strong className="block font-display text-2xl font-bold text-ink">
+            <strong className="block text-xl font-bold leading-tight text-ink sm:text-2xl">
               {metric.value}
             </strong>
-            <small className="mt-1 block text-[12px] text-slate-500">
+            <small className="mt-1 block text-caption text-slate-500">
               {metric.detail}
             </small>
           </div>
@@ -154,11 +145,16 @@ export default function OverviewPage() {
 
       <Panel
         actions={
-          <span className="font-mono text-[12px] text-slate-500">
+          <span className="font-mono text-caption text-slate-500">
             {run.job.id}
           </span>
         }
         eyebrow="Production run"
+        footer={
+          <p className="text-caption text-slate-500">
+            {run.manifests.length} Genblaze runs · Backblaze B2 system of record
+          </p>
+        }
         title="Localization pipeline"
       >
         <ol className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -168,7 +164,7 @@ export default function OverviewPage() {
               key={stage.name}
             >
               <span
-                className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full font-mono text-[11px] font-bold ${
+                className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full font-mono text-micro font-bold ${
                   stage.state === "done"
                     ? "bg-fit-green text-white"
                     : "bg-slate-200 text-slate-600"
@@ -179,22 +175,19 @@ export default function OverviewPage() {
                   : String(index + 1).padStart(2, "0")}
               </span>
               <span className="min-w-0">
-                <strong className="block text-[14px] font-semibold text-ink">
+                <strong className="block text-body font-semibold text-ink">
                   {stage.name}
                 </strong>
-                <small className="text-[12px] text-slate-500">
+                <small className="text-caption text-slate-500">
                   {stage.detail}
                 </small>
               </span>
             </li>
           ))}
         </ol>
-        <p className="mt-5 border-t border-slate-100 pt-4 text-[13px] text-slate-500">
-          {run.manifests.length} Genblaze runs · Backblaze B2 system of record
-        </p>
       </Panel>
 
-      <Panel eyebrow="Quality and lineage" title="Verified run workbench">
+      <Panel eyebrow="Quality and lineage" title="Evidence for this project">
         <div className="grid gap-3 sm:grid-cols-2">
           {evidenceLinks.map((link) => (
             <Link
@@ -202,7 +195,7 @@ export default function OverviewPage() {
               href={link.href}
               key={link.href}
             >
-              <strong className="flex items-center justify-between gap-2 font-display text-[15px] text-ink">
+              <strong className="flex items-center justify-between gap-2 text-[15px] font-bold text-ink">
                 {link.label}
                 <span
                   aria-hidden="true"
@@ -211,7 +204,7 @@ export default function OverviewPage() {
                   →
                 </span>
               </strong>
-              <p className="mt-1.5 text-[13px] leading-relaxed text-slate-600">
+              <p className="mt-1.5 text-caption leading-relaxed text-slate-600">
                 {link.body}
               </p>
             </Link>

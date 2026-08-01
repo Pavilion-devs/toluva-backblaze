@@ -53,7 +53,7 @@ function MockFrame({
       <div
         className={`absolute inset-0 bg-gradient-to-br from-[#9AC1EB] via-[#C5DFF7] to-[#EFE6D8] rounded-panel transform ${tilt} transition-transform duration-700 group-hover:rotate-0`}
       />
-      <div className="md:p-12 transition-transform duration-500 hover:scale-[1.01] bg-gradient-to-br from-[#9AC1EB] via-[#C5DFF7] to-[#EFE6D8] rounded-3xl p-8 relative shadow-[0_30px_60px_-15px_rgba(0,0,0,0.1)]">
+      <div className="md:p-12 transition-transform duration-500 hover:scale-[1.01] bg-gradient-to-br from-[#9AC1EB] via-[#C5DFF7] to-[#EFE6D8] rounded-3xl p-4 sm:p-6 relative shadow-[0_30px_60px_-15px_rgba(0,0,0,0.1)]">
         {children}
       </div>
     </div>
@@ -63,10 +63,10 @@ function MockFrame({
 export function RunShowcase() {
   return (
     <section
-      className="w-full max-w-7xl mx-auto px-4 md:px-12 py-24 relative z-10"
+      className="w-full max-w-7xl mx-auto px-5 sm:px-6 md:px-12 py-16 sm:py-20 md:py-24 relative z-10"
       id="how"
     >
-      <div className="flex flex-col lg:flex-row items-center gap-12 lg:gap-24 mb-32">
+      <div className="flex flex-col lg:flex-row items-center gap-10 sm:gap-12 lg:gap-24 mb-20 sm:mb-24 md:mb-32">
         <MockFrame tilt="rotate-1">
           <div className="overflow-hidden bg-white max-w-lg border-white/60 border rounded-2xl mx-auto shadow-xl">
             <div className="border-slate-100 border-b p-6">
@@ -129,7 +129,7 @@ export function RunShowcase() {
           <span className="text-xs font-bold tracking-widest text-slate-500 uppercase mb-4 block">
             Timing-drift control
           </span>
-          <h2 className="lg:text-[46px] leading-[1.15] text-4xl font-semibold text-ink tracking-tight font-display mb-6">
+          <h2 className="text-[30px] sm:text-4xl lg:text-[46px] leading-[1.15] font-semibold text-ink tracking-tight font-display mb-6">
             A segment that overran by 113% is now in the green
           </h2>
           <p className="leading-relaxed text-lg font-medium text-slate-600 mb-10">
@@ -145,10 +145,10 @@ export function RunShowcase() {
           >
             Inspect the correction proof
           </Link>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
             {capabilities.map((capability) => (
               <div
-                className="flex items-center gap-3 px-6 py-4 rounded-2xl border border-slate-100 bg-white/50 hover:bg-white hover:shadow-md hover:border-slate-200 transition-all"
+                className="flex items-center gap-3 px-5 py-3.5 rounded-2xl border border-slate-100 bg-white/50 hover:bg-white hover:shadow-md hover:border-slate-200 transition-all"
                 key={capability.label}
               >
                 <svg
@@ -180,7 +180,7 @@ export function RunShowcase() {
           <span className="text-xs font-bold tracking-widest text-slate-500 uppercase mb-4 block">
             Authorization gate
           </span>
-          <h2 className="lg:text-[46px] leading-[1.15] text-4xl font-semibold text-ink tracking-tight font-display mb-6">
+          <h2 className="text-[30px] sm:text-4xl lg:text-[46px] leading-[1.15] font-semibold text-ink tracking-tight font-display mb-6">
             The wrong language never reaches the provider
           </h2>
           <p className="text-lg text-slate-600 font-medium mb-10 leading-relaxed">
@@ -196,13 +196,13 @@ export function RunShowcase() {
           >
             Test the boundary
           </Link>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
             {["German · allowed", "French · blocked", "Spanish · blocked", "Japanese · blocked"].map(
               (label) => {
                 const allowed = label.includes("allowed");
                 return (
                   <div
-                    className="flex items-center gap-3 px-6 py-4 rounded-2xl border border-slate-100 bg-white/50 hover:bg-white hover:shadow-md hover:border-slate-200 transition-all"
+                    className="flex items-center gap-3 px-5 py-3.5 rounded-2xl border border-slate-100 bg-white/50 hover:bg-white hover:shadow-md hover:border-slate-200 transition-all"
                     key={label}
                   >
                     <span

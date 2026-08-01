@@ -11,7 +11,7 @@ export function WorkspaceNotices() {
     <div className="mb-6 flex flex-col gap-3">
       {notice && (
         <div
-          className="flex items-center gap-3 rounded-2xl border border-fit-green/25 bg-fit-green-soft px-5 py-3 text-[14px] font-semibold text-fit-green"
+          className="flex items-center gap-3 rounded-2xl border border-fit-green/25 bg-fit-green-soft px-5 py-3 text-body font-semibold text-fit-green"
           role="status"
         >
           <span aria-hidden="true">✓</span>
@@ -27,7 +27,7 @@ export function WorkspaceNotices() {
       )}
       {statusWarning && (
         <div
-          className="rounded-2xl border border-fit-amber/25 bg-fit-amber-soft px-5 py-3 text-[14px] font-medium text-fit-amber"
+          className="rounded-2xl border border-fit-amber/25 bg-fit-amber-soft px-5 py-3 text-body font-medium text-fit-amber"
           role="status"
         >
           {statusWarning}

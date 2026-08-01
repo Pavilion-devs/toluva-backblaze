@@ -77,11 +77,10 @@ test("server-renders the product workspace", async () => {
 
   const html = await response.text();
   assert.match(html, /One governed German edition/);
-  assert.match(html, /Verified engine run/);
   assert.match(html, /Controlled engine sample/);
   assert.match(html, /Voice control/);
   assert.match(html, /Localization pipeline/);
-  assert.match(html, /Verified run workbench/);
+  assert.match(html, /Evidence for this project/);
   assert.match(html, /Manifests/);
   assert.match(html, /1 bounded tempo-fit/);
   assert.match(html, /New localization/);
@@ -94,17 +93,34 @@ test("server-renders the product workspace", async () => {
   assert.doesNotMatch(html, /codex-preview/);
   assert.doesNotMatch(html, /Your site is taking shape/);
   assert.doesNotMatch(html, /judge mode/i);
+
+  // The reference run is one project among the user's own, not the headline.
+  assert.doesNotMatch(html, /Verified engine run/);
+  assert.doesNotMatch(html, /Verified run workbench/);
+  assert.doesNotMatch(html, /Inspect the proof/);
 });
 
-test("server-renders the timing correction proof on its own route", async () => {
+test("server-renders the timing correction archive on its own route", async () => {
   const response = await render("/workspace/timing");
   assert.equal(response.status, 200);
 
   const html = await response.text();
-  assert.match(html, /Signature correction proof/);
+  assert.match(html, /Correction archive/);
   assert.match(html, /Measured red → approved rewrite → verified green/);
   assert.match(html, /3 measured segments/);
   assert.match(html, /Ein Video kann jedes Team erreichen/);
+});
+
+test("workspace navigation stays grouped on small screens", async () => {
+  const html = await (await render("/workspace")).text();
+
+  // The drawer replaced a flat eight-pill scroller that dropped the grouping.
+  // Its panel mounts on open, so only the trigger is server-rendered.
+  assert.match(html, /aria-label="Open workspace menu"/);
+  assert.match(html, /aria-controls="workspace-drawer"/);
+  for (const group of ["Overview", "Localize", "Editions", "Evidence"]) {
+    assert.match(html, new RegExp(group), `${group} group missing from nav`);
+  }
 });
 
 test("every workspace route server-renders", async () => {

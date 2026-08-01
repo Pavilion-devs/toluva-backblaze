@@ -34,12 +34,12 @@ const pillars = [
 
 export function Pillars() {
   return (
-    <section className="w-full max-w-7xl mx-auto px-4 md:px-6 py-24 relative z-10">
+    <section className="w-full max-w-7xl mx-auto px-5 sm:px-6 py-16 sm:py-20 md:py-24 relative z-10">
       <div className="text-center max-w-3xl mx-auto mb-16 animate-fade-in">
         <span className="text-xs font-bold tracking-widest text-slate-500 uppercase mb-4 block">
           One governed lane
         </span>
-        <h2 className="md:text-5xl text-3xl font-semibold text-ink tracking-tight font-display mb-6">
+        <h2 className="text-[30px] sm:text-4xl md:text-5xl font-semibold text-ink tracking-tight font-display mb-6">
           Not a dubbing button. A chain of custody.
         </h2>
         <p className="text-lg text-slate-600 font-medium">

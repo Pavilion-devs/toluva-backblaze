@@ -35,8 +35,8 @@ const columns = [
 
 export function SiteFooter() {
   return (
-    <footer className="w-full max-w-7xl z-10 mx-auto pt-36 px-6 pb-12 relative">
-      <div className="bg-panel rounded-panel p-8 md:p-12 lg:p-16 shadow-sm border border-white/20">
+    <footer className="w-full max-w-7xl z-10 mx-auto pt-20 sm:pt-28 md:pt-36 px-6 pb-12 relative">
+      <div className="bg-panel rounded-panel p-6 sm:p-8 md:p-12 lg:p-16 shadow-sm border border-white/20">
         <div className="flex flex-col lg:flex-row gap-12 lg:gap-24 mb-16 justify-between">
           <div className="max-w-sm">
             <div className="flex items-center gap-2 mb-6">
