@@ -9,6 +9,10 @@ verifiable localized editions.
 
 Source repository: <https://github.com/Pavilion-devs/toluva-backblaze>
 
+Application: <https://usetoluva.xyz>
+
+Hosting fallback: <https://toluva.asaborodaniel.chatgpt.site>
+
 ## Submitted capability
 
 The deployed release proves one English-to-German lane with server-enforced

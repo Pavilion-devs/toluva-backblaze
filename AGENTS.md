@@ -297,6 +297,9 @@ The verified composition contract is:
 - Public judge mode is read-only. Keep `TOLUVA_ENABLE_LIVE_INTAKE=false` so
   anonymous visitors cannot upload, approve records, mutate B2, or spend
   provider credits.
+- Use `https://usetoluva.xyz` as the canonical public submission URL. Keep
+  `https://toluva.asaborodaniel.chatgpt.site` documented as the hosting
+  fallback until custom-domain DNS and SSL are active.
 
 The verified fixture-free execution contract is:
 

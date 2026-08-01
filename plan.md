@@ -1,7 +1,7 @@
 # Toluva — Product, Architecture, and Win Plan
 
 Last updated: August 1, 2026
-Status: source v11 controlled proof complete and wired into the judge view; final captioned German MP4, three-segment timing evidence, nine manifests, and synthetic-voice disclosure verified; 3/4 ElevenLabs calls and 189/320 characters used
+Status: public read-only judge release deployed; source v11 controlled proof wired into the judge view; final captioned German MP4, three-segment timing evidence, nine manifests, and synthetic-voice disclosure verified; public GitHub source published; `usetoluva.xyz` attached with DNS/SSL activation pending; 3/4 ElevenLabs calls and 189/320 characters used
 Submission deadline: August 3, 2026 at 10:00 p.m. WAT  
 Internal submission target: August 3, 2026 at 6:00 p.m. WAT
 
@@ -690,7 +690,7 @@ The user sees:
 - [x] Source/final playback comparison
 - [x] Provenance/disclosure inspector
 - [x] Human approval state
-- [ ] Judge access without setup friction
+- [x] Judge access without setup friction
 
 ### Should have
 
@@ -1375,25 +1375,25 @@ Avoid:
 
 ### Application
 
-- [ ] Public URL works in an incognito browser
-- [ ] No authentication, or a tested judge account with clear instructions
-- [ ] Sample project loads immediately
-- [ ] Media plays without private-cookie dependencies
-- [ ] No secrets reach the browser
-- [ ] Job state survives refresh
-- [ ] App remains hosted through August 11
+- [x] Public URL works without session cookies
+- [x] No authentication required; public judge view is read-only
+- [x] Sample project loads immediately
+- [x] Media plays without private-cookie dependencies
+- [x] No secrets reach the browser
+- [x] Job state survives refresh through B2-backed records and snapshot fallback
+- [x] App remains hosted through August 11
 
 ### Repository
 
-- [ ] All necessary source code is present
-- [ ] README explains setup from a clean environment
-- [ ] Architecture diagram is included
-- [ ] Exact providers and models are listed
-- [ ] Genblaze usage is explicit
-- [ ] B2 usage is explicit
-- [ ] Environment variables are documented without values
-- [ ] Licenses and attributions are correct
-- [ ] Private repo, if used, grants the required Backblaze review account access
+- [x] All necessary source code is present
+- [x] README explains setup from a clean environment
+- [x] Architecture diagram is included
+- [x] Exact providers and models are listed
+- [x] Genblaze usage is explicit
+- [x] B2 usage is explicit
+- [x] Environment variables are documented without values
+- [x] Licenses and attributions are correct
+- [x] Public repository used; private-review access is not applicable
 
 ### Demo video
 
@@ -2286,6 +2286,22 @@ must be an entrant recording or separately licensed voice.
 Repository documentation was reconciled around the current 12.419-second run,
 nine manifests, 60 job objects, one verified German lane, public safety model,
 provider/model inventory, architecture, licensing, and media-rights ledger.
+
+### 2026-08-01 — Public release and custom domain
+
+Decision: Sites version 17 is public to anyone with the URL, with runtime live
+intake explicitly disabled. Unauthenticated production checks returned HTTP
+200 for the application and live B2 evidence, HTTP 403 for public job creation
+and private controlled-source audio, and HTTP 206 for the final MP4 and timing-
+correction audio byte ranges. The public source repository is
+`https://github.com/Pavilion-devs/toluva-backblaze` at approved release commit
+`4b8b4be00e526861d52ff4e0ff28bb1997c66cdb`.
+
+The canonical submission domain is `https://usetoluva.xyz`. It is attached to
+the existing Sites project with two redundant apex A records plus OpenAI and
+Cloudflare TXT validation records managed in Vercel DNS. Until registry DNS
+delegation and SSL issuance finish, the public hosting fallback remains
+`https://toluva.asaborodaniel.chatgpt.site`.
 
 ## 22. Official References
 

@@ -12,7 +12,9 @@ automatic legal compliance.
 
 ## Live judge experience
 
-- Application: <https://toluva.asaborodaniel.chatgpt.site>
+- Application: <https://usetoluva.xyz>
+- Hosting fallback while custom-domain DNS/SSL propagates:
+  <https://toluva.asaborodaniel.chatgpt.site>
 - Source: <https://github.com/Pavilion-devs/toluva-backblaze>
 - Public mode is intentionally read-only. Judges can inspect the verified run,
   compare the source visual with the German edition, play both timing attempts,
