@@ -29,6 +29,9 @@ from genblaze_core.runnable.config import RunnableConfig
 from toluva_pipeline.media import probe_duration
 
 
+DEFAULT_MAX_TEMPO_FACTOR = 1.08
+
+
 def _local_audio_path(asset: Asset) -> Path:
     parsed = urlparse(asset.url)
     if parsed.scheme != "file":
@@ -71,6 +74,7 @@ def validate_segment_audio_placements(
     *,
     target_seconds: float,
     collision_tolerance_seconds: float = 0.04,
+    max_tempo_factor: float = DEFAULT_MAX_TEMPO_FACTOR,
 ) -> None:
     if not placements:
         raise ValueError("at least one segment placement is required")
@@ -83,6 +87,8 @@ def validate_segment_audio_placements(
         or collision_tolerance_seconds < 0
     ):
         raise ValueError("collision tolerance must be finite and non-negative")
+    if not math.isfinite(max_tempo_factor) or max_tempo_factor < 1:
+        raise ValueError("max tempo factor must be finite and at least 1")
 
     seen: set[str] = set()
     previous_end = 0.0
@@ -93,16 +99,26 @@ def validate_segment_audio_placements(
             raise ValueError("segment placement IDs must be unique")
         if placement.start_seconds < previous_end:
             raise ValueError("source segment placements must not overlap")
-        if placement.end_seconds > target_seconds:
+        if (
+            placement.end_seconds
+            > target_seconds + collision_tolerance_seconds
+        ):
             raise ValueError("segment placement exceeds target duration")
         if not math.isfinite(duration) or duration <= 0:
             raise ValueError("audio durations must be positive and finite")
+        slot_seconds = placement.end_seconds - placement.start_seconds
+        tempo_factor = max(1.0, duration / slot_seconds)
+        if tempo_factor > max_tempo_factor + 1e-9:
+            raise ValueError(
+                f"localized speech for {placement.segment_id} collides with "
+                "the next segment"
+            )
         next_start = (
             placements[index + 1].start_seconds
             if index + 1 < len(placements)
             else target_seconds
         )
-        generated_end = placement.start_seconds + duration
+        generated_end = placement.start_seconds + (duration / tempo_factor)
         if generated_end > next_start + collision_tolerance_seconds:
             raise ValueError(
                 f"localized speech for {placement.segment_id} collides with "
@@ -112,29 +128,70 @@ def validate_segment_audio_placements(
         previous_end = placement.end_seconds
 
 
+def segment_audio_tempo_factors(
+    placements: tuple[SegmentAudioPlacement, ...],
+    audio_durations: tuple[float, ...],
+    *,
+    max_tempo_factor: float = DEFAULT_MAX_TEMPO_FACTOR,
+) -> tuple[float, ...]:
+    """Return bounded speed-up factors without ever slowing short speech."""
+
+    if len(placements) != len(audio_durations):
+        raise ValueError("every segment placement requires one audio duration")
+    if not math.isfinite(max_tempo_factor) or max_tempo_factor < 1:
+        raise ValueError("max tempo factor must be finite and at least 1")
+    factors: list[float] = []
+    for placement, duration in zip(placements, audio_durations, strict=True):
+        if not math.isfinite(duration) or duration <= 0:
+            raise ValueError("audio durations must be positive and finite")
+        slot_seconds = placement.end_seconds - placement.start_seconds
+        factor = max(1.0, duration / slot_seconds)
+        if factor > max_tempo_factor + 1e-9:
+            raise ValueError(
+                f"localized speech for {placement.segment_id} exceeds the "
+                "bounded tempo-fit limit"
+            )
+        factors.append(factor)
+    return tuple(factors)
+
+
 def build_segment_audio_command(
     *,
     ffmpeg_path: str,
     audio_paths: tuple[Path, ...],
+    audio_durations: tuple[float, ...],
     placements: tuple[SegmentAudioPlacement, ...],
     output_path: Path,
     target_seconds: float,
+    max_tempo_factor: float = DEFAULT_MAX_TEMPO_FACTOR,
 ) -> list[str]:
     if len(audio_paths) != len(placements) or not audio_paths:
         raise ValueError("audio paths and placements must be non-empty and aligned")
+    if len(audio_durations) != len(placements):
+        raise ValueError("audio durations and placements must be aligned")
     if not math.isfinite(target_seconds) or target_seconds <= 0:
         raise ValueError("target_seconds must be positive and finite")
+    tempo_factors = segment_audio_tempo_factors(
+        placements,
+        audio_durations,
+        max_tempo_factor=max_tempo_factor,
+    )
     command = [ffmpeg_path, "-hide_banner", "-loglevel", "error"]
     for path in audio_paths:
         command.extend(("-i", str(path)))
 
     filters: list[str] = []
     labels: list[str] = []
-    for index, placement in enumerate(placements):
+    for index, (placement, tempo_factor) in enumerate(
+        zip(placements, tempo_factors, strict=True)
+    ):
         label = f"segment_audio_{index}"
         delay_ms = round(placement.start_seconds * 1000)
+        tempo_filter = (
+            f"atempo={tempo_factor:.6f}," if tempo_factor > 1.0 + 1e-9 else ""
+        )
         filters.append(
-            f"[{index}:a]aresample=48000,"
+            f"[{index}:a]{tempo_filter}aresample=48000,"
             "aformat=sample_fmts=fltp:channel_layouts=stereo,"
             f"adelay={delay_ms}:all=1[{label}]"
         )
@@ -187,12 +244,14 @@ class ToluvaSegmentAudioAssembler(SyncProvider):
         ffmpeg_path: str = "ffmpeg",
         timeout: float = 120,
         collision_tolerance_seconds: float = 0.04,
+        max_tempo_factor: float = DEFAULT_MAX_TEMPO_FACTOR,
     ) -> None:
         super().__init__()
         self._output_dir = output_dir
         self._ffmpeg_path = ffmpeg_path
         self._timeout = timeout
         self._collision_tolerance_seconds = collision_tolerance_seconds
+        self._max_tempo_factor = max_tempo_factor
 
     def get_capabilities(self) -> ProviderCapabilities:
         return ProviderCapabilities(
@@ -248,6 +307,12 @@ class ToluvaSegmentAudioAssembler(SyncProvider):
                 durations,
                 target_seconds=target_seconds,
                 collision_tolerance_seconds=self._collision_tolerance_seconds,
+                max_tempo_factor=self._max_tempo_factor,
+            )
+            tempo_factors = segment_audio_tempo_factors(
+                placements,
+                durations,
+                max_tempo_factor=self._max_tempo_factor,
             )
             for asset, placement in zip(
                 audio_assets,
@@ -279,9 +344,11 @@ class ToluvaSegmentAudioAssembler(SyncProvider):
             audio_paths=tuple(
                 _local_audio_path(asset) for asset in audio_assets
             ),
+            audio_durations=durations,
             placements=placements,
             output_path=output_path,
             target_seconds=target_seconds,
+            max_tempo_factor=self._max_tempo_factor,
         )
         try:
             subprocess.run(
@@ -329,8 +396,36 @@ class ToluvaSegmentAudioAssembler(SyncProvider):
                     "segment_ids": [
                         placement.segment_id for placement in placements
                     ],
-                    "placement_policy": "source-timed-collision-checked",
+                    "placement_policy": "source-timed-bounded-tempo-fit",
                     "silence_policy": "preserve-source-gaps",
+                    "tempo_policy": "bounded-speed-up-no-slowdown",
+                    "max_tempo_factor": self._max_tempo_factor,
+                    "tempo_factors": {
+                        placement.segment_id: factor
+                        for placement, factor in zip(
+                            placements,
+                            tempo_factors,
+                            strict=True,
+                        )
+                    },
+                    "post_fit_durations": {
+                        placement.segment_id: duration / factor
+                        for placement, duration, factor in zip(
+                            placements,
+                            durations,
+                            tempo_factors,
+                            strict=True,
+                        )
+                    },
+                    "tempo_adjusted_segment_ids": [
+                        placement.segment_id
+                        for placement, factor in zip(
+                            placements,
+                            tempo_factors,
+                            strict=True,
+                        )
+                        if factor > 1.0 + 1e-9
+                    ],
                 },
             )
         )

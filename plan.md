@@ -1,7 +1,7 @@
 # Toluva — Product, Architecture, and Win Plan
 
-Last updated: July 31, 2026
-Status: engine and site fixes deployed; upload-safe source v11 accepted; next paid proof awaits explicit spend approval
+Last updated: August 1, 2026
+Status: source v11 proof reached audio assembly; 3/4 ElevenLabs calls and 189/320 characters used; zero-spend tempo-fit fix required
 Submission deadline: August 3, 2026 at 10:00 p.m. WAT  
 Internal submission target: August 3, 2026 at 6:00 p.m. WAT
 
@@ -2110,6 +2110,74 @@ zero restart count, and the kernel recorded no OOM entry. The Dara API health
 endpoint returned `status: ok`, and the public web endpoint responded. This
 PID change is preserved as deployment evidence rather than being described as
 an unchanged-service proof.
+
+### 2026-07-31 — New controlled proof queued without provider spend
+
+Decision: Preserve project `intake-57f5ca73b1fb4b4d97e85f94605f39e5`
+and job `localize-c33715df7d024a27950560095077ff52` as the one new paid-proof
+handle authorized for at most four ElevenLabs calls and 320 input characters.
+Do not publish another intake request for source v11.
+
+Evidence: The production intake stored the accepted source v11 bytes, source
+record, initial queued event, and immutable queue request. The browser could
+not read the first job-status record, and the worker subsequently reported a
+`StorageError` before it could load and claim the request. A read-only B2
+namespace listing contains exactly those four intake objects and no claimed
+event, stage journal, transcription, translation, speech asset, Genblaze
+manifest, timing record, or final output. Therefore the current controlled-run
+usage is exactly zero ElevenLabs calls and zero input characters.
+
+The production worker itself remains active, healthy, at zero restarts, and
+continues successful idle queue listings. The failure is isolated to the B2
+read transaction required to load the queued request. Resume only this exact
+job after Backblaze read access is restored; the durable request will be found
+automatically. Do not click the intake button again, create a replacement job,
+or reinterpret the four-call/320-character ceiling as approval for an
+unbounded timing retry.
+
+The signed-in Backblaze Caps & Alerts page later confirmed the exact account
+state: Class B was at 2,596 of 2,500 daily transactions, while Class C remained
+available at 1,462 of 2,500. The account cannot edit caps without adding a
+credit card, so no billing method or cap was changed. Backblaze documents that
+the counters reset at 12:00 a.m. GMT, which is 1:00 a.m. WAT. The existing
+worker should therefore claim the preserved request after that reset; verify
+the exact namespace and spend journal rather than publishing another job.
+
+### 2026-08-01 — Three-segment speech accepted; assembly policy mismatch found
+
+Outcome: After the daily B2 counter reset, the same preserved job resumed
+without another intake request. It completed transcription, transcript QA,
+three Argos translation stages, authorization, three initial ElevenLabs speech
+attempts, captions, and the aggregate multi-segment timing summary. It then
+stopped safely at localized-audio assembly before composition.
+
+The paid scope remained below the approved ceiling:
+
+- Segment 1: 36 characters, 2.351020 seconds in a 2.58-second slot,
+  -8.8752% amber underlong, selected with silence padding.
+- Segment 2: 49 characters, 3.291429 seconds in a 3.15-second slot,
+  +4.4898% green overlong, selected on the first attempt.
+- Segment 3: 104 characters, 5.851429 seconds in a 6.689-second slot,
+  -12.5216% amber underlong, selected with silence padding.
+- Total: exactly three ElevenLabs calls and 189 input characters. No rewrite,
+  retry, or fourth provider call occurred. All three speech assets and their
+  Genblaze manifests were stored and independently verified by the pipeline.
+
+Finding: the timing policy accepts an overlong attempt inside the green 8%
+band, but the audio assembler permits only 0.04 seconds of collision. Segment
+2 begins at 2.58 seconds and its 3.291429-second speech reaches 5.871429;
+segment 3 begins at 5.73, creating a 0.141429-second overlap. The assembler
+therefore emitted an immutable failed stage and the job's `99-failed` event.
+No final MP4 or immutable final record exists.
+
+Required correction: apply a measured, bounded tempo fit only to an accepted
+overlong segment before source-timed assembly. Segment 2 needs a 1.044898
+speed factor, which is inside the existing green timing threshold. Record the
+factor and post-fit duration in the audio-assembly manifest. Preserve the old
+failed stage and use a new versioned assembly checkpoint so replay can reuse
+the verified transcript, translations, and all three speech assets without
+another ElevenLabs call. Do not spend the remaining one-call/131-character
+headroom to solve an FFmpeg assembly-policy defect.
 
 ## 22. Official References
 

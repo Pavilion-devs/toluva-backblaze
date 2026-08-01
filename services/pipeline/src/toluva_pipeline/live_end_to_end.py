@@ -89,6 +89,7 @@ E2E_AUTHORIZATION_ID = "auth-stock-live-v1"
 ARGOS_MODEL = "translate-en_de-1_3"
 WHISPER_MODEL = "whisper-base-en"
 WHISPER_MODEL_REVISION = "88b03866a4066bb4a97c12258abb82b1e9af0121"
+AUDIO_ASSEMBLY_POLICY_VERSION = "tempo-fit-v2"
 ProgressCallback = Callable[[str, str], None]
 
 
@@ -1237,12 +1238,16 @@ def run_live_end_to_end(
                 )
             )
 
-        audio_stage = f"localized-audio-assembly-{version}"
+        audio_stage = (
+            f"localized-audio-assembly-{version}-"
+            f"{AUDIO_ASSEMBLY_POLICY_VERSION}"
+        )
         audio_checkpoint = stage_journal.completion(audio_stage)
         if audio_checkpoint is None:
             audio_idempotency = _sha256(
                 (
                     f"{job_id}\0{source.sha256}\0"
+                    f"{AUDIO_ASSEMBLY_POLICY_VERSION}\0"
                     + "\0".join(
                         asset.sha256 or "" for asset in segment_audio_assets
                     )
@@ -1252,11 +1257,14 @@ def run_live_end_to_end(
                 audio_stage,
                 idempotency_key=audio_idempotency,
                 provider="toluva-segment-audio-assembler",
-                model="ffmpeg-segment-audio-v1",
+                model="ffmpeg-segment-audio-v2",
             )
             audio_sink = ObjectStorageSink(
                 storage.backend,
-                prefix=keys.localized_audio_genblaze_prefix(scope, version),
+                prefix=keys.localized_audio_genblaze_prefix(
+                    scope,
+                    f"{version}-{AUDIO_ASSEMBLY_POLICY_VERSION}",
+                ),
                 key_strategy=KeyStrategy.HIERARCHICAL,
             )
             try:
@@ -1275,14 +1283,22 @@ def run_live_end_to_end(
                         idempotency_key=audio_idempotency,
                     )
                     .step(
-                        ToluvaSegmentAudioAssembler(output_dir=temp_root),
-                        model="ffmpeg-segment-audio-v1",
+                        ToluvaSegmentAudioAssembler(
+                            output_dir=temp_root,
+                            max_tempo_factor=(
+                                1.0 + settings.green_drift_threshold
+                            ),
+                        ),
+                        model="ffmpeg-segment-audio-v2",
                         modality=Modality.AUDIO,
                         expected_duration_sec=source.duration,
                         external_inputs=segment_audio_assets,
                         metadata={
                             "operation": "source_timed_audio_fan_in",
                             "segment_count": len(segment_audio_assets),
+                            "assembly_policy_version": (
+                                AUDIO_ASSEMBLY_POLICY_VERSION
+                            ),
                         },
                         placements=[
                             {
@@ -1347,7 +1363,8 @@ def run_live_end_to_end(
                 "b2_key": localized_audio.asset_key,
                 "genblaze_manifest_key": localized_audio.manifest_key,
                 "segment_count": len(multi_outcome.segment_results),
-                "placement_policy": "source-timed-collision-checked",
+                "placement_policy": "source-timed-bounded-tempo-fit",
+                "assembly_policy_version": AUDIO_ASSEMBLY_POLICY_VERSION,
             },
         )
         caption_asset = Asset(
