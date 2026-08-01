@@ -1,4 +1,4 @@
-ARG BASE_IMAGE=toluva-worker:queue-v2-6c78a0e
+ARG BASE_IMAGE=toluva-worker:queue-v4-39b1b9a
 FROM ${BASE_IMAGE}
 
 # This maintenance image is valid only when Dockerfile, pyproject.toml, and
