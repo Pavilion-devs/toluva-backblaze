@@ -1,7 +1,7 @@
 # Toluva — Product, Architecture, and Win Plan
 
 Last updated: August 1, 2026
-Status: public v17 proof remains deployed; product-first UI and bounded live-intake release candidate implemented locally; source v11 controlled proof retained as an example project; final captioned German MP4, three-segment timing evidence, nine manifests, and synthetic-voice disclosure verified; `usetoluva.xyz` attached; no new provider call made during productization
+Status: public v17 proof remains deployed; product-first UI and bounded live-intake release candidate implemented locally; matching queue-v5 worker deployed and reporting healthy through B2; source v11 controlled proof retained as an example project; final captioned German MP4, three-segment timing evidence, nine manifests, and synthetic-voice disclosure verified; `usetoluva.xyz` attached; no new provider call made during productization
 Submission deadline: August 3, 2026 at 10:00 p.m. WAT  
 Internal submission target: August 3, 2026 at 6:00 p.m. WAT
 
@@ -2325,10 +2325,12 @@ reserves calls and characters before any provider invocation; restored
 attempts count once by idempotency key. A mismatched slot, missing disclosure,
 lost rights confirmation, or exhausted budget stops before ElevenLabs.
 
-Release boundary: `TOLUVA_ENABLE_LIVE_INTAKE` still fails closed. The public
-flag must not be enabled until this matching worker revision is deployed.
-Productization and its test suite made zero Whisper, Argos, ElevenLabs, FFmpeg,
-or new B2 intake runs.
+Release boundary: `TOLUVA_ENABLE_LIVE_INTAKE` still fails closed on public
+Sites version 17. The matching queue-v5 worker revision is now deployed and
+reports a healthy, idle B2 heartbeat. Public web activation remains separate
+and should happen only after the planned visual cleanup and final release QA.
+Productization, worker release, and their test suites made zero Whisper, Argos,
+ElevenLabs, FFmpeg, or new B2 intake runs.
 
 ## 22. Official References
 

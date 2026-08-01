@@ -30,8 +30,8 @@ pre-existing service.
 - `toluva-worker.service` — systemd unit that owns the one container replica
 - `worker.env.example` — secret-free runtime contract
 
-The current deployment image is `toluva-worker:queue-v4-39b1b9a`, built from
-the bounded tempo-fit audio-assembly source over the verified queue-v4 base. It
+The current deployment image is `toluva-worker:queue-v5-66ba37b`, built from
+the bounded public-admission source over the verified queue-v4 base. It
 contains Python 3.12.13, the locked CPU-only Python environment,
 FFmpeg/FFprobe, the pinned Faster Whisper model, and the pinned Argos
 English-to-German model.
@@ -65,7 +65,7 @@ Installing or starting Toluva must not require a reboot.
 1. Install Docker from the Ubuntu package repository without upgrading or
    restarting unrelated services.
 2. Load the verified `linux/amd64` image and tag it
-   `toluva-worker:queue-v4-39b1b9a`.
+   `toluva-worker:queue-v5-66ba37b`.
 3. Create `/etc/toluva/worker.env` from `worker.env.example`, insert only the
    scoped B2 credential and ElevenLabs key, and set mode `0600`.
 4. Copy `toluva-worker.service` to `/etc/systemd/system/`.
@@ -432,6 +432,45 @@ unrelated service units.
   archive transfer, though no command targeted Dara; its unit stayed active
   with a successful result and zero restart count. This is recorded rather
   than described as unchanged for the entire transfer window.
+
+## Queue-v5 bounded public-admission release — August 1, 2026
+
+- Source revision `66ba37b` layers only checked-in Python source over the
+  verified queue-v4 base. The main Dockerfile, `pyproject.toml`, and `uv.lock`
+  were unchanged. The release adds exact UTC-day admission validation and a
+  per-job provider budget that reserves at most four TTS calls and 400
+  generated characters before ElevenLabs.
+- The complete pipeline suite passed 131 tests. UI lint, the Node 24 Vinext
+  production build, and all 18 rendered-server/API boundary tests passed. No
+  external provider was invoked by validation.
+- The deployed `linux/amd64` image is
+  `toluva-worker:queue-v5-66ba37b`, image ID
+  `sha256:3d8e9e0b4b9d2f447906bbb323597deb2c9d9099311b36f360f8a61725fc79df`,
+  and size 1,629,299,344 bytes. The compressed transfer archive was
+  1,625,015,767 bytes and matched SHA-256
+  `aee13c106c953788b376580f2cb021de7da25a07f504122272d730e66715970b`
+  locally and remotely.
+- A first foreground image-load connection reset before Docker completed; the
+  old queue-v4 worker and every shared-host service remained active, and the
+  queue-v5 image was absent. The load was then repeated as an isolated
+  transient Toluva task capped at 50% CPU, 512 MB RAM, and low I/O weight. It
+  completed successfully without restarting a service.
+- Network-disabled readiness passed on the VPS with B2 and ElevenLabs
+  configured, FFmpeg/FFprobe present, both pinned models present, one replica,
+  120-second polling and heartbeat, and explicit provider-spend opt-in. The B2
+  heartbeat now reports engine `queue-v5`, state `idle`, and a healthy finite
+  lease.
+- Final state is active, `running healthy`, zero restarts, no published ports,
+  1.5 CPUs, 2,000 MB RAM, 256 processes, UID/GID 10001, all capabilities
+  dropped, and `no-new-privileges`. The new unit hash is
+  `1e3321bb413871977e99954dce6a35722f37079b7b1da7966a675deb7118165d`;
+  the previous unit is preserved in `/opt/toluva/releases/66ba37b/`.
+- Dara API, Dara web, and both Cloudflare process IDs stayed unchanged through
+  cutover. Their four unit hashes matched the preflight values, restart counts
+  remained zero, the kernel recorded no OOM event, and Dara health returned
+  `status: ok`. No command targeted a Dara or Cloudflare unit.
+- No intake request, Whisper, Argos, ElevenLabs, FFmpeg, composition, or B2 job
+  evidence was created during this release.
 
 ## Rollback
 
