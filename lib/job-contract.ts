@@ -78,6 +78,33 @@ export function isSegmentId(value: string): boolean {
   return SEGMENT_ID.test(value);
 }
 
+export function isCanonicalProtectedTermSubset(
+  value: unknown,
+  authorizedTerms: readonly string[],
+): value is string[] {
+  if (
+    !Array.isArray(value) ||
+    authorizedTerms.some(
+      (term) =>
+        typeof term !== "string" || term.length < 1 || term.length > 100,
+    ) ||
+    new Set(authorizedTerms).size !== authorizedTerms.length ||
+    value.some(
+      (term) =>
+        typeof term !== "string" || term.length < 1 || term.length > 100,
+    )
+  ) {
+    return false;
+  }
+  const canonicalSubset = authorizedTerms.filter((term) =>
+    value.includes(term),
+  );
+  return (
+    canonicalSubset.length === value.length &&
+    value.every((term, index) => term === canonicalSubset[index])
+  );
+}
+
 export function jobPrefix(projectId: string, jobId: string): string {
   if (!isIntakeProjectId(projectId) || !isLocalizationJobId(jobId)) {
     throw new Error("invalid_job_handle");

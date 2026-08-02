@@ -18,6 +18,7 @@ import {
   MAX_UPLOAD_BYTES,
   MIN_CLIP_SECONDS,
   finalRecordKey,
+  isCanonicalProtectedTermSubset,
   isIntakeProjectId,
   isLocalizationJobId,
   isSegmentId,
@@ -516,14 +517,9 @@ async function validateTranslationRevisionRequest(
     !Number.isFinite(request.target_seconds) ||
     request.target_seconds <= 0 ||
     request.target_seconds > MAX_CLIP_SECONDS ||
-    !Array.isArray(request.protected_terms) ||
-    request.protected_terms.length !== expected.protectedTerms.length ||
-    request.protected_terms.some(
-      (term, index) =>
-        term !== expected.protectedTerms[index] ||
-        typeof term !== "string" ||
-        term.length < 1 ||
-        term.length > 100,
+    !isCanonicalProtectedTermSubset(
+      request.protected_terms,
+      expected.protectedTerms,
     )
   ) {
     throw new Error("timing_revision_request_scope_mismatch");

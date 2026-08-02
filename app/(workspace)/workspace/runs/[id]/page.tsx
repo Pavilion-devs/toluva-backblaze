@@ -320,11 +320,16 @@ export default function RunDetailPage() {
               value={timingValue}
             />
             <small className="mt-1.5 block text-caption text-slate-500">
-              {job.timingReview.instruction} Keep{" "}
-              {job.timingReview.protectedTerms
-                .map((term) => `“${term}”`)
-                .join(", ")}{" "}
-              exact.
+              {job.timingReview.instruction}
+              {job.timingReview.protectedTerms.length > 0 && (
+                <>
+                  {" "}Keep{" "}
+                  {job.timingReview.protectedTerms
+                    .map((term) => `“${term}”`)
+                    .join(", ")}{" "}
+                  exact.
+                </>
+              )}
             </small>
           </label>
           {timingError && (
