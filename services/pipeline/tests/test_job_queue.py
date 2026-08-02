@@ -456,6 +456,106 @@ def test_later_timing_approval_supersedes_an_older_failure_once() -> None:
     )
 
 
+def test_hash_bound_local_fit_supersedes_retry_without_approving_it() -> None:
+    backend = MemoryBackend()
+    payload = request_payload()
+    scope = StorageScope(
+        str(payload["project_id"]),
+        str(payload["job_id"]),
+        "de-DE",
+    )
+    keys = ToluvaObjectKeys(scope.project_id)
+    backend.objects[keys.queue_request(scope)] = json.dumps(payload).encode()
+    backend.objects[
+        keys.translation_revision_request(scope, "segment-002", 2)
+    ] = b"{}"
+    backend.objects[
+        keys.translation_approved_revision(scope, "segment-002", 2)
+    ] = b"{}"
+    retry_three = keys.translation_revision_request(
+        scope,
+        "segment-002",
+        3,
+    )
+    backend.objects[retry_three] = b"{}"
+
+    assert (
+        find_next_runnable_job(
+            backend,  # type: ignore[arg-type]
+            now=datetime(2026, 8, 2, 12, 0, tzinfo=UTC),
+            stale_claim_seconds=90,
+        )
+        is None
+    )
+
+    local_fit_key = keys.local_tempo_fit_approval(
+        scope,
+        "segment-002",
+        2,
+    )
+    backend.objects[local_fit_key] = b"{}"
+    assert keys.translation_approved_revision(
+        scope,
+        "segment-002",
+        3,
+    ) not in backend.objects
+    assert find_next_runnable_job(
+        backend,  # type: ignore[arg-type]
+        now=datetime(2026, 8, 2, 12, 1, tzinfo=UTC),
+        stale_claim_seconds=90,
+    ) == (scope.project_id, scope.job_id)
+
+    failure_key = (
+        keys.status_event(scope, 99, "failed").removesuffix(".json")
+        + "-after-segment-002-tempo-fit-attempt-2.json"
+    )
+    backend.objects[failure_key] = b"{}"
+    backend.modified[local_fit_key] = datetime(
+        2026, 8, 2, 12, 1, tzinfo=UTC
+    )
+    backend.modified[failure_key] = datetime(
+        2026, 8, 2, 12, 2, tzinfo=UTC
+    )
+    assert (
+        find_next_runnable_job(
+            backend,  # type: ignore[arg-type]
+            now=datetime(2026, 8, 2, 12, 3, tzinfo=UTC),
+            stale_claim_seconds=90,
+        )
+        is None
+    )
+
+
+def test_failed_status_binds_to_latest_local_fit_resume_signal() -> None:
+    backend = MemoryBackend()
+    scope = StorageScope(
+        f"intake-{'a' * 32}",
+        f"localize-{'b' * 32}",
+        "de-DE",
+    )
+    keys = ToluvaObjectKeys(scope.project_id)
+    local_fit_key = keys.local_tempo_fit_approval(
+        scope,
+        "segment-002",
+        2,
+    )
+    backend.objects[local_fit_key] = b"{}"
+    writer = JobStatusWriter(
+        backend,  # type: ignore[arg-type]
+        scope=scope,
+        keys=keys,
+        clock=lambda: datetime(2026, 8, 2, 12, 0, tzinfo=UTC),
+    )
+
+    writer.emit("failed", "Stopped after the approved local fit.")
+
+    expected = (
+        keys.status_event(scope, 99, "failed").removesuffix(".json")
+        + "-after-segment-002-tempo-fit-attempt-2.json"
+    )
+    assert expected in backend.objects
+
+
 def test_final_record_is_a_terminal_queue_marker() -> None:
     backend = MemoryBackend()
     payload = request_payload()

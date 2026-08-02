@@ -22,6 +22,10 @@ from toluva_pipeline.settings import Settings
 from toluva_pipeline.storage.b2 import build_b2_storage
 from toluva_pipeline.storage.keys import StorageScope, ToluvaObjectKeys
 from toluva_pipeline.storage.records import put_immutable
+from toluva_pipeline.storage.tempo_fit import (
+    ApprovedLocalTempoFit,
+    B2ApprovedLocalTempoFitStore,
+)
 
 QUEUE_PATTERN = re.compile(
     r"^projects/(?P<project>intake-[a-f0-9]{32})/"
@@ -40,10 +44,17 @@ APPROVED_REVISION_PATTERN = re.compile(
     r"(?P<segment>[A-Za-z0-9][A-Za-z0-9_-]{0,127})/"
     r"approved-revisions/attempt-(?P<attempt>[1-9][0-9]*)\.json$"
 )
+LOCAL_TEMPO_FIT_APPROVAL_PATTERN = re.compile(
+    r"^projects/intake-[a-f0-9]{32}/"
+    r"jobs/localize-[a-f0-9]{32}/de-de/qa/"
+    r"(?P<segment>[A-Za-z0-9][A-Za-z0-9_-]{0,127})/"
+    r"tempo-fit-approvals/attempt-(?P<attempt>[1-9][0-9]*)\.json$"
+)
 FAILED_STATUS_PATTERN = re.compile(
     r"^projects/intake-[a-f0-9]{32}/jobs/localize-[a-f0-9]{32}/"
     r"de-de/status/99-failed(?:-after-(?:transcript-review|"
-    r"[A-Za-z0-9][A-Za-z0-9_-]{0,127}-attempt-[1-9][0-9]*))?\.json$"
+    r"[A-Za-z0-9][A-Za-z0-9_-]{0,127}-(?:tempo-fit-)?"
+    r"attempt-[1-9][0-9]*))?\.json$"
 )
 ADMISSION_PATTERN = re.compile(
     r"^projects/system-runtime/intake-admissions/"
@@ -255,28 +266,42 @@ class JobStatusWriter:
         elif stage == "failed":
             entries = _list_entries(
                 self._backend,
-                f"{self._scope.job_prefix}/translations/",
+                f"{self._scope.job_prefix}/",
             )
-            approvals = tuple(
-                (entry, match)
+            approvals: list[tuple[FileEntry, str]] = [
+                (
+                    entry,
+                    f"{match.group('segment')}-attempt-{match.group('attempt')}",
+                )
                 for entry in entries
                 if (
                     match := APPROVED_REVISION_PATTERN.fullmatch(entry.key)
                 )
                 is not None
+            ]
+            approvals.extend(
+                (
+                    entry,
+                    f"{match.group('segment')}-tempo-fit-attempt-"
+                    f"{match.group('attempt')}",
+                )
+                for entry in entries
+                if (
+                    match := LOCAL_TEMPO_FIT_APPROVAL_PATTERN.fullmatch(
+                        entry.key
+                    )
+                )
+                is not None
             )
             if approvals:
-                _, match = max(
+                _, suffix = max(
                     approvals,
                     key=lambda item: (
                         _utc(item[0].last_modified),
                         item[0].key,
                     ),
                 )
-                key = key.removesuffix(".json") + (
-                    f"-after-{match.group('segment')}-"
-                    f"attempt-{match.group('attempt')}.json"
-                )
+                key = key.removesuffix(".json") + f"-after-{suffix}.json"
             elif self._backend.exists(
                 self._keys.transcript_human_review(
                     self._scope, JOB_VERSION
@@ -369,6 +394,35 @@ def _revision_approval_key(request_key: str) -> str:
     )
 
 
+def _tempo_fit_approval_key_for_revision(request_key: str) -> str | None:
+    """Map retry N to a local-fit approval selecting existing attempt N-1."""
+
+    match = REVISION_REQUEST_PATTERN.fullmatch(request_key)
+    if match is None:
+        raise ValueError("translation revision request key is invalid")
+    retry_number = int(match.group("attempt"))
+    if retry_number <= 1:
+        return None
+    job_prefix = match.group("prefix").removesuffix("translations/")
+    return (
+        f"{job_prefix}qa/{match.group('segment')}/tempo-fit-approvals/"
+        f"attempt-{retry_number - 1}.json"
+    )
+
+
+def _revision_resume_key(
+    request_key: str,
+    entries_by_key: dict[str, FileEntry],
+) -> str | None:
+    revision_approval = _revision_approval_key(request_key)
+    if revision_approval in entries_by_key:
+        return revision_approval
+    tempo_fit_approval = _tempo_fit_approval_key_for_revision(request_key)
+    if tempo_fit_approval in entries_by_key:
+        return tempo_fit_approval
+    return None
+
+
 def process_queued_job(
     settings: Settings,
     *,
@@ -425,6 +479,43 @@ def process_queued_job(
         raise
 
 
+def approve_queued_job_local_tempo_fit(
+    settings: Settings,
+    *,
+    project_id: str,
+    job_id: str,
+    segment_id: str,
+    attempt_number: int,
+    approved_max_tempo_factor: float,
+    approved_by: str,
+    approved_at: datetime | None = None,
+) -> ApprovedLocalTempoFit:
+    """Write one no-provider-call approval bound to an exact queued attempt."""
+
+    scope = StorageScope(project_id, job_id, TARGET_LANGUAGE)
+    storage = build_b2_storage(settings, scope, preflight=True)
+    request, scope, keys = _load_request(
+        storage.backend,
+        project_id=project_id,
+        job_id=job_id,
+    )
+    _validate_public_admission(
+        request,
+        json.loads(storage.backend.get(request.admission_key)),
+    )
+    return B2ApprovedLocalTempoFitStore(
+        storage.backend,
+        keys=keys,
+        scope=scope,
+    ).approve(
+        segment_id=segment_id,
+        attempt_number=attempt_number,
+        approved_max_tempo_factor=approved_max_tempo_factor,
+        approved_by=approved_by,
+        approved_at=approved_at or datetime.now(UTC),
+    )
+
+
 def find_next_runnable_job(
     backend: S3StorageBackend,
     *,
@@ -465,7 +556,8 @@ def find_next_runnable_job(
         failed_entries = tuple(
             entry
             for entry_key, entry in entries_by_key.items()
-            if FAILED_STATUS_PATTERN.fullmatch(entry_key)
+            if entry_key.startswith(f"{scope.job_prefix}/status/")
+            and FAILED_STATUS_PATTERN.fullmatch(entry_key)
         )
         failed_entry = (
             max(
@@ -484,7 +576,7 @@ def find_next_runnable_job(
         )
         if revision_request_keys:
             has_outstanding_revision = any(
-                _revision_approval_key(request_key) not in entries_by_key
+                _revision_resume_key(request_key, entries_by_key) is None
                 for request_key in revision_request_keys
             )
             if has_outstanding_revision:
@@ -495,8 +587,15 @@ def find_next_runnable_job(
             # build left an immutable failure marker, only a later approval may
             # supersede it; an old approval must never create a retry loop.
             approval_entries = tuple(
-                entries_by_key[_revision_approval_key(request_key)]
+                entries_by_key[resume_key]
                 for request_key in revision_request_keys
+                if (
+                    resume_key := _revision_resume_key(
+                        request_key,
+                        entries_by_key,
+                    )
+                )
+                is not None
             )
             if failed_entry is None or max(
                 _utc(entry.last_modified) for entry in approval_entries

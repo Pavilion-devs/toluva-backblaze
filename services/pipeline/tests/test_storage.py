@@ -40,6 +40,11 @@ def test_timing_and_speech_prefixes_are_attempt_scoped() -> None:
     assert keys.timing_summary(scope, "segment-01").endswith(
         "/qa/segment-01/summary.json"
     )
+    assert keys.local_tempo_fit_approval(
+        scope,
+        "segment-01",
+        2,
+    ).endswith("/qa/segment-01/tempo-fit-approvals/attempt-2.json")
     assert keys.multi_segment_summary(scope, "v2").endswith(
         "/qa/multi-segment/v2.json"
     )

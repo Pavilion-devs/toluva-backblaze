@@ -71,6 +71,10 @@ from toluva_pipeline.storage.keys import StorageScope, ToluvaObjectKeys
 from toluva_pipeline.storage.multi_segment import B2MultiSegmentJournal
 from toluva_pipeline.storage.records import put_immutable
 from toluva_pipeline.storage.stages import B2StageJournal
+from toluva_pipeline.storage.tempo_fit import (
+    ApprovedLocalTempoFit,
+    B2ApprovedLocalTempoFitStore,
+)
 from toluva_pipeline.storage.translation_revisions import (
     B2ApprovedTranslationRewriter,
     RewriteApprovalRequired,
@@ -89,7 +93,7 @@ E2E_AUTHORIZATION_ID = "auth-stock-live-v1"
 ARGOS_MODEL = "translate-en_de-1_3"
 WHISPER_MODEL = "whisper-base-en"
 WHISPER_MODEL_REVISION = "88b03866a4066bb4a97c12258abb82b1e9af0121"
-AUDIO_ASSEMBLY_POLICY_VERSION = "tempo-fit-v2"
+AUDIO_ASSEMBLY_POLICY_VERSION = "tempo-fit-v3"
 ProgressCallback = Callable[[str, str], None]
 
 
@@ -185,6 +189,7 @@ class LiveEndToEndReport:
     localized_audio_manifest_key: str | None = None
     red_to_green_segment_ids: tuple[str, ...] = ()
     resumed_segment_ids: tuple[str, ...] = ()
+    local_tempo_fit_approvals: tuple[dict[str, object], ...] = ()
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -1210,20 +1215,44 @@ def run_live_end_to_end(
         )
         completed_timings: dict[str, TimingCorrectionOutcome] = {}
         prior_attempts: dict[str, tuple[CorrectionAttempt, ...]] = {}
+        local_tempo_fits: dict[str, ApprovedLocalTempoFit] = {}
+        tempo_fit_store = B2ApprovedLocalTempoFitStore(
+            storage.backend,
+            keys=keys,
+            scope=scope,
+        )
         for segment in timed_transcript.segments:
             completed = correction_journal.completed_outcome(
                 segment.segment_id
             )
+            durable_attempts = (
+                completed.attempts
+                if completed is not None
+                else correction_journal.completed_attempts(
+                    segment.segment_id,
+                    max_attempts=settings.max_timing_retries + 1,
+                )
+            )
+            for attempt in durable_attempts:
+                generator.restore_attempt(attempt)
+            tempo_fit = tempo_fit_store.load(
+                segment_id=segment.segment_id,
+                attempts=durable_attempts,
+            )
+            if tempo_fit is not None:
+                if completed is not None and completed != tempo_fit.outcome:
+                    raise EndToEndIntegrityError(
+                        "Stored timing summary conflicts with local-fit approval"
+                    )
+                if completed is None:
+                    correction_journal.correction_completed(tempo_fit.outcome)
+                completed_timings[segment.segment_id] = tempo_fit.outcome
+                local_tempo_fits[segment.segment_id] = tempo_fit
+                continue
             if completed is not None:
                 completed_timings[segment.segment_id] = completed
                 continue
-            durable_attempts = correction_journal.completed_attempts(
-                segment.segment_id,
-                max_attempts=settings.max_timing_retries + 1,
-            )
             prior_attempts[segment.segment_id] = durable_attempts
-            for attempt in durable_attempts:
-                generator.restore_attempt(attempt)
 
         progress(
             "translating",
@@ -1291,7 +1320,11 @@ def run_live_end_to_end(
         )
         progress(
             "timing-qa",
-            "Measured every segment and selected the bounded timing action.",
+            (
+                "Measured every segment and applied the approved local tempo fit."
+                if local_tempo_fits
+                else "Measured every segment and selected the bounded timing action."
+            ),
         )
 
         localized_transcript = multi_outcome.to_localized_transcript(
@@ -1347,6 +1380,18 @@ def run_live_end_to_end(
                     f"{AUDIO_ASSEMBLY_POLICY_VERSION}\0"
                     + "\0".join(
                         asset.sha256 or "" for asset in segment_audio_assets
+                    )
+                    + "\0"
+                    + "\0".join(
+                        (
+                            f"{segment_id}:"
+                            f"{approval.tempo_factor:.12f}:"
+                            f"{approval.approved_max_tempo_factor:.6f}:"
+                            f"{approval.approval_key}"
+                        )
+                        for segment_id, approval in sorted(
+                            local_tempo_fits.items()
+                        )
                     )
                 ).encode()
             )
@@ -1405,6 +1450,18 @@ def run_live_end_to_end(
                                 ),
                                 "end_seconds": (
                                     result.source_segment.end_seconds
+                                ),
+                                **(
+                                    {
+                                        "approved_max_tempo_factor": (
+                                            local_tempo_fits[
+                                                result.source_segment.segment_id
+                                            ].approved_max_tempo_factor
+                                        )
+                                    }
+                                    if result.source_segment.segment_id
+                                    in local_tempo_fits
+                                    else {}
                                 ),
                             }
                             for result in multi_outcome.segment_results
@@ -1611,6 +1668,10 @@ def run_live_end_to_end(
             "segment_count": len(multi_outcome.segment_results),
             "human_approval_required_before_publish": True,
             "development_sample": development_sample,
+            "local_tempo_fit_approvals": [
+                item.evidence_dict()
+                for item in local_tempo_fits.values()
+            ],
         }
         put_immutable(
             storage.backend,
@@ -1635,7 +1696,9 @@ def run_live_end_to_end(
             (attempt.timing_band for attempt in selected_attempts),
             key=lambda value: band_rank.get(value, 99),
         )
-        if multi_outcome.red_to_green_segment_ids:
+        if local_tempo_fits:
+            aggregate_action = "approved_local_tempo_fit"
+        elif multi_outcome.red_to_green_segment_ids:
             aggregate_action = "bounded_rewrite_regeneration"
         elif any(
             attempt.timing_action == "pad_silence"
@@ -1734,6 +1797,10 @@ def run_live_end_to_end(
                 multi_outcome.red_to_green_segment_ids
             ),
             resumed_segment_ids=multi_outcome.resumed_segment_ids,
+            local_tempo_fit_approvals=tuple(
+                item.evidence_dict()
+                for item in local_tempo_fits.values()
+            ),
         )
         put_immutable(
             storage.backend,

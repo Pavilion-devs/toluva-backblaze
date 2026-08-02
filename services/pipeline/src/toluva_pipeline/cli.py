@@ -16,6 +16,7 @@ from toluva_pipeline.live_timing_correction import (
 )
 from toluva_pipeline.live_tts import run_live_tts_spike
 from toluva_pipeline.job_queue import (
+    approve_queued_job_local_tempo_fit,
     process_next_queued_job,
     process_queued_job,
 )
@@ -125,6 +126,25 @@ def main() -> None:
         "--job-id",
         help="Exact localization job ID to resume or process.",
     )
+    tempo_fit = subparsers.add_parser("approve-local-tempo-fit")
+    tempo_fit.add_argument(
+        "--confirm-write",
+        action="store_true",
+        help="Required acknowledgement that an immutable B2 approval is written.",
+    )
+    tempo_fit.add_argument("--project-id", required=True)
+    tempo_fit.add_argument("--job-id", required=True)
+    tempo_fit.add_argument("--segment-id", required=True)
+    tempo_fit.add_argument("--attempt-number", required=True, type=int)
+    tempo_fit.add_argument(
+        "--approved-max-tempo-factor",
+        required=True,
+        type=float,
+    )
+    tempo_fit.add_argument(
+        "--approved-by",
+        default="authenticated-toluva-operator",
+    )
     args = parser.parse_args()
 
     if args.command == "readiness":
@@ -159,6 +179,18 @@ def main() -> None:
             Settings.from_env(),
             job_id=args.job_id,
         ).to_dict()
+    elif args.command == "approve-local-tempo-fit":
+        if not args.confirm_write:
+            parser.error("approve-local-tempo-fit requires --confirm-write")
+        result = approve_queued_job_local_tempo_fit(
+            Settings.from_env(),
+            project_id=args.project_id,
+            job_id=args.job_id,
+            segment_id=args.segment_id,
+            attempt_number=args.attempt_number,
+            approved_max_tempo_factor=args.approved_max_tempo_factor,
+            approved_by=args.approved_by,
+        ).evidence_dict()
     else:
         if not args.confirm_spend:
             parser.error("queue-worker requires --confirm-spend")
