@@ -143,6 +143,15 @@ The implemented correction boundary is:
   request and block before another TTS call. Resume the same job only after the
   matching approval appears; reuse every completed attempt and rehydrate its
   verified Genblaze parent manifest instead of repeating speech generation.
+- Keep the ordinary tempo-fit ceiling at 1.08×. A segment may use at most
+  1.09× only when a separate immutable local-fit approval binds the exact
+  timing-attempt bytes, speech key and SHA-256, Genblaze manifest identity,
+  and superseded retry-request bytes. The approval must explicitly authorize
+  no provider call, and the unused retry request must remain unapproved and
+  unexecuted evidence.
+- Restore and reserve every durable speech attempt across completed and pending
+  segments before resuming a job. A completed segment still counts toward the
+  job-wide TTS call and character ceilings.
 - The current ElevenLabs adapter path uses `max_retries=0`; a provider retry
   without a supported idempotency header could double-bill. Toluva retries only
   as an explicit, measured correction attempt.
@@ -314,8 +323,12 @@ The verified fixture-free execution contract is:
 - Run source ingest, timed transcription, protected-term translation, voice
   authorization, TTS timing QA, captions, and three-input composition as
   inspectable stages.
-- Preserve every provider timed segment. Do not collapse a multi-segment
-  transcript into one translation or speech slot.
+- Preserve every raw provider timed segment unchanged in B2. After an
+  immutable human correction, adjacent same-speaker phrase chunks may be
+  coalesced into the correction's approved sentence slots for translation and
+  speech. Keep the original phrase record as evidence, retain its outer timing
+  boundaries, and never collapse an unreviewed multi-segment transcript into
+  one arbitrary slot.
 - Keep transcription, translation, speech, and composition as four separately
   verifiable Genblaze manifests.
 - Independently re-hash the final B2 object before reporting success.

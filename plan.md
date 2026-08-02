@@ -1,7 +1,7 @@
 # Toluva — Product, Architecture, and Win Plan
 
 Last updated: August 2, 2026
-Status: public Sites v18 product experience deployed at `usetoluva.xyz` with bounded live intake enabled; matching queue-v5 worker reports healthy through B2; source v11 controlled proof remains an example project; final captioned German MP4, three-segment timing evidence, nine manifests, and synthetic-voice disclosure verified; no provider call was made during productization, UI release, or production smoke testing
+Status: public Sites v20 product experience deployed at `usetoluva.xyz`; live upload/review/resume flow verified end to end on an entrant-uploaded 11.989-second clip; the exact same B2 job completed with four ElevenLabs calls, 310 characters, a hash-bound 1.088777× local tempo fit under a segment-only 1.09× approval, nine project manifests, embedded German captions, and a recomputed final MP4 hash; VPS worker source `741eaf6` is healthy and idle on the verified queue-v7 runtime
 Submission deadline: August 3, 2026 at 10:00 p.m. WAT  
 Internal submission target: August 3, 2026 at 6:00 p.m. WAT
 
@@ -1512,11 +1512,15 @@ Resolve during scaffolding or the first spike:
 - [x] Voice type used in the demo — disclosed ElevenLabs stock synthetic voice
 - [x] Paid TTS plan — no purchase required for the verified cached proof
 - [x] Final target languages — German is the one submitted production lane
-- [ ] Source sample and rights
+- [x] Source sample and rights — the entrant-uploaded rehearsal clip passed the
+      explicit upload-rights confirmation; its immutable source hash remains
+      bound to the completed B2 job
 - [x] Media composition implementation — Genblaze video/audio/caption fan-in
-      through FFmpeg verified; final licensed sample still required
-- [x] Exact tempo-adjustment limit — maximum 1.08× speed-up; never slow an
-      underlength attempt
+      through FFmpeg verified on both the controlled proof and the public
+      entrant-uploaded rehearsal
+- [x] Exact tempo-adjustment limit — ordinary maximum 1.08× speed-up; a
+      hash-bound, listened-to segment may use at most 1.09× through a separate
+      immutable approval; never slow an underlength attempt
 - [x] Visible disclosure format — product disclosure panel plus machine-readable
       B2 disclosure record
 - [x] Manifest strategy — canonical sidecar is required first; embedding may be
@@ -2363,6 +2367,78 @@ JSON and non-JSON gateway responses and turns HTTP 413 into stable, human-
 readable guidance rather than exposing a JSON parser exception. The production
 build, 19 rendered web/API tests, and all 131 pipeline tests passed after the
 change; the queue-v5 worker and provider budget contract are unchanged.
+
+### 2026-08-02 — Public end-to-end rehearsal and hash-bound 1.09× local fit
+
+Decision: complete the public rehearsal as the same durable job rather than
+create a new request or spend a fifth TTS call. The source is
+`toluva-demo-source-upload.mp4`, project
+`intake-751ce86f165f491b9b7b2e79e4e8bd3a`, job
+`localize-2fdd1137b0424fd7bb279f640a8eb693`, 729,643 bytes, and 11.989
+seconds. The operator confirmed upload rights and synthetic-stock-voice
+disclosure through the real intake UI.
+
+Whisper's four immutable phrase chunks were preserved as raw evidence. The
+approved transcript correction coalesced adjacent same-speaker phrases into
+two sentence-aligned localization slots without inventing timing boundaries:
+
+- Segment 1: 0.000–2.440 seconds, `Welcome to Toluva.`
+- Segment 2: 2.440–11.989 seconds, the remaining approved sentence.
+
+Provider accounting is final and bounded. Segment 1 used 21 and 31 characters;
+segment 2 used 87 and 171 characters. That is exactly four ElevenLabs calls
+and 310 generated characters. Segment 1 attempt 2 measured 2.115918 seconds in
+its 2.44-second slot and was selected with silence padding. Segment 2 attempt
+2—the existing fourth-call audio—measured 10.396735 seconds in its
+9.549000-second slot, or +8.8777359% amber overlong. Its exact local fit is
+`1.088777358885747×`.
+
+Implementation: commits `b387f94`, `28b2396`, and `741eaf6` add a general,
+fail-closed local-fit approval path. The ordinary assembler ceiling remains
+1.08×. A segment-specific override is hard-capped at 1.09× and is valid only
+when one immutable B2 approval matches the exact timing-record SHA-256, speech
+audio key and SHA-256, speech manifest key/hash, and superseded retry-request
+SHA-256. It explicitly records `provider_call_authorized: false`. Queue
+recovery accepts that record as a same-job resume signal while preserving the
+attempt-3 rewrite request as unapproved and unexecuted evidence. All durable
+attempts—including completed segments—are restored into the provider budget
+before any resume could reach TTS.
+
+The first two operator write attempts failed closed before B2 mutation because
+the validator initially expected the domain direction alias and job scope in
+the timing-attempt payload, while the durable records use `overlong` and keep
+scope in their object key/retry record. The validator was corrected to match
+the existing immutable schema without relaxing any hash, scope, factor, or
+provider-call constraint. The full pipeline suite passed 140 tests after each
+correction. No approval record and no provider call was created by either
+failed attempt.
+
+Final evidence:
+
+- The immutable approval selects segment 2 attempt 2 at
+  `1.088777358885747×` with approved maximum `1.09×`; all three bound hashes
+  recompute successfully.
+- Attempt 3 remains requested, has no approved translation, and has no speech
+  asset. B2 contains exactly four speech MP3 assets and the final record reports
+  four attempts and 310 characters.
+- The `tempo-fit-v3` localized-audio manifest verifies. It records the normal
+  `1.08×` ceiling, the segment-2-only `1.09×` approval, exact factor
+  `1.0887773589`, post-fit duration `9.549`, and no tempo change for segment 1.
+- The final MP4 is 807,176 bytes and 11.989 seconds with H.264 video, AAC audio,
+  and embedded German `mov_text` captions. Its B2 bytes and public media API
+  both hash to
+  `57a9b839ff39b1bcf843b223cc2d4ca08f1611ce81302fd22e6514aa4986fd93`.
+  The sidecar VTT is 342 bytes and hashes to
+  `fc8d07ab10a27511c12bd0dc7eaf474e894d4f7bc4e4c20109eeef509aeca2aa`.
+- Nine Genblaze manifests exist across the project: transcription, two
+  translations, four speech attempts, localized-audio assembly, and final
+  composition. The audio and composition manifests both verify.
+- The public status endpoint reports `completed` and `finalAvailable: true`.
+  The worker returned to consecutive idle ticks, `running healthy`, zero
+  restarts, source label `741eaf6`, and a read-only source mount.
+- Dara API PID `195737`, Dara web PID `194345`, and Cloudflare PIDs `30979` and
+  `193201` retained their exact start times throughout all three Toluva-only
+  cutovers. No command targeted or restarted a Dara or Cloudflare service.
 
 ## 22. Official References
 

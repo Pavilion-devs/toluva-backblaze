@@ -30,11 +30,13 @@ pre-existing service.
 - `toluva-worker.service` — systemd unit that owns the one container replica
 - `worker.env.example` — secret-free runtime contract
 
-The current deployment image is `toluva-worker:queue-v5-66ba37b`, built from
-the bounded public-admission source over the verified queue-v4 base. It
-contains Python 3.12.13, the locked CPU-only Python environment,
-FFmpeg/FFprobe, the pinned Faster Whisper model, and the pinned Argos
-English-to-German model.
+The current deployment uses verified runtime image
+`toluva-worker:queue-v7-fd5dba3`, image ID
+`sha256:f7ffe1d28e12058662ff5817836ab7b8c5e25ae42a61ac75257b28e0913418c1`,
+with source commit `741eaf6` mounted read-only from
+`/opt/toluva/releases/741eaf6/services/pipeline/src`. The runtime contains
+Python 3.12.13, the locked CPU-only Python environment, FFmpeg/FFprobe, pinned
+Faster Whisper, and the pinned Argos English-to-German model.
 
 The worker polls and publishes its lease every 120 seconds. An idle queue scan
 uses one paginated B2 listing snapshot and must not perform per-job `HEAD` or
@@ -64,8 +66,9 @@ Installing or starting Toluva must not require a reboot.
 
 1. Install Docker from the Ubuntu package repository without upgrading or
    restarting unrelated services.
-2. Load the verified `linux/amd64` image and tag it
-   `toluva-worker:queue-v5-66ba37b`.
+2. Load the verified `linux/amd64` runtime image and tag it
+   `toluva-worker:queue-v7-fd5dba3`; install the exact checked-in source release
+   at the read-only mount path recorded in `toluva-worker.service`.
 3. Create `/etc/toluva/worker.env` from `worker.env.example`, insert only the
    scoped B2 credential and ElevenLabs key, and set mode `0600`.
 4. Copy `toluva-worker.service` to `/etc/systemd/system/`.
@@ -471,6 +474,38 @@ unrelated service units.
   `status: ok`. No command targeted a Dara or Cloudflare unit.
 - No intake request, Whisper, Argos, ElevenLabs, FFmpeg, composition, or B2 job
   evidence was created during this release.
+
+## Hash-bound local tempo-fit source release — August 2, 2026
+
+- Source commits `b387f94`, `28b2396`, and final `741eaf6` add the
+  segment-scoped 1.09× local-fit approval and exact durable-schema validation.
+  All 140 pipeline tests passed. The main Dockerfile, `pyproject.toml`, lockfile,
+  FFmpeg, Python environment, and model files are unchanged.
+- The verified runtime remains `toluva-worker:queue-v7-fd5dba3`, image ID
+  `sha256:f7ffe1d28e12058662ff5817836ab7b8c5e25ae42a61ac75257b28e0913418c1`.
+  Final source commit `741eaf6` is mounted read-only from
+  `/opt/toluva/releases/741eaf6/services/pipeline/src`; the container label
+  records that commit. Network-disabled imports and the hard 1.09× ceiling
+  were verified before every cutover.
+- The final systemd unit hash is
+  `1dafef4724cea22bac0e144981ca3836b6624990999172a17be92481b55a68e9`,
+  matching the checked-in file. The container is `running healthy`, zero
+  restarts, source mount `RW=false`, and returned to consecutive idle ticks.
+- Job `localize-2fdd1137b0424fd7bb279f640a8eb693` resumed from an immutable,
+  hash-bound approval and completed without a fifth TTS call. The final record
+  reports four attempts and 310 characters. The attempt-3 revision request is
+  preserved while its translation approval and speech asset remain absent.
+- The approval's timing-attempt, speech-audio, and superseded-request SHA-256
+  values all recompute. It records exact factor `1.088777358885747`, cap
+  `1.09`, and `provider_call_authorized: false`. The ordinary global assembler
+  cap remains 1.08×.
+- The `tempo-fit-v3` audio and final composition manifests verify. The final
+  11.989-second MP4 is 807,176 bytes with H.264 video, AAC audio, embedded
+  German `mov_text`, and SHA-256
+  `57a9b839ff39b1bcf843b223cc2d4ca08f1611ce81302fd22e6514aa4986fd93`.
+- Dara API PID `195737`, Dara web PID `194345`, and Cloudflare PIDs `30979` and
+  `193201` retained their exact start times across the Toluva-only cutovers.
+  No Dara or Cloudflare service was targeted.
 
 ## Rollback
 
