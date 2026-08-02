@@ -16,6 +16,7 @@ from toluva_pipeline.storage.keys import StorageScope, ToluvaObjectKeys
 class MemoryBackend:
     def __init__(self) -> None:
         self.objects: dict[str, bytes] = {}
+        self.modified: dict[str, datetime] = {}
         self.exists_calls = 0
         self.get_calls = 0
         self.list_calls = 0
@@ -43,7 +44,10 @@ class MemoryBackend:
         entries = tuple(
             SimpleNamespace(
                 key=key,
-                last_modified=datetime(2026, 7, 29, 12, 0, tzinfo=UTC),
+                last_modified=self.modified.get(
+                    key,
+                    datetime(2026, 7, 29, 12, 0, tzinfo=UTC),
+                ),
             )
             for key in self.objects
             if key.startswith(prefix)
@@ -332,7 +336,6 @@ def test_blocked_transcript_resumes_only_after_human_review() -> None:
         stale_claim_seconds=90,
     ) == (scope.project_id, scope.job_id)
 
-
 def test_blocked_timing_resumes_only_after_approved_revision() -> None:
     backend = MemoryBackend()
     payload = request_payload()
@@ -387,6 +390,70 @@ def test_blocked_timing_resumes_only_after_approved_revision() -> None:
         now=datetime(2026, 7, 29, 12, 0, tzinfo=UTC),
         stale_claim_seconds=90,
     ) == (scope.project_id, scope.job_id)
+
+
+def test_later_timing_approval_supersedes_an_older_failure_once() -> None:
+    backend = MemoryBackend()
+    payload = request_payload()
+    scope = StorageScope(
+        str(payload["project_id"]),
+        str(payload["job_id"]),
+        "de-DE",
+    )
+    keys = ToluvaObjectKeys(scope.project_id)
+    request_key = keys.translation_revision_request(
+        scope, "segment-001", 2
+    )
+    approval_key = keys.translation_approved_revision(
+        scope, "segment-001", 2
+    )
+    failure_key = keys.status_event(scope, 99, "failed")
+    backend.objects[keys.queue_request(scope)] = json.dumps(payload).encode()
+    backend.objects[keys.status_event(scope, 6, "transcript-blocked")] = b"{}"
+    backend.objects[keys.transcript_human_review(scope, "live-v1")] = b"{}"
+    backend.objects[failure_key] = b"{}"
+    backend.objects[request_key] = b"{}"
+    backend.modified[failure_key] = datetime(
+        2026, 7, 29, 12, 1, tzinfo=UTC
+    )
+    backend.modified[request_key] = datetime(
+        2026, 7, 29, 12, 2, tzinfo=UTC
+    )
+
+    assert (
+        find_next_runnable_job(
+            backend,  # type: ignore[arg-type]
+            now=datetime(2026, 7, 29, 12, 3, tzinfo=UTC),
+            stale_claim_seconds=90,
+        )
+        is None
+    )
+
+    backend.objects[approval_key] = b"{}"
+    backend.modified[approval_key] = datetime(
+        2026, 7, 29, 12, 4, tzinfo=UTC
+    )
+    assert find_next_runnable_job(
+        backend,  # type: ignore[arg-type]
+        now=datetime(2026, 7, 29, 12, 5, tzinfo=UTC),
+        stale_claim_seconds=90,
+    ) == (scope.project_id, scope.job_id)
+
+    resumed_failure_key = keys.status_event(
+        scope, 99, "failed"
+    ).removesuffix(".json") + "-after-segment-001-attempt-2.json"
+    backend.objects[resumed_failure_key] = b"{}"
+    backend.modified[resumed_failure_key] = datetime(
+        2026, 7, 29, 12, 5, tzinfo=UTC
+    )
+    assert (
+        find_next_runnable_job(
+            backend,  # type: ignore[arg-type]
+            now=datetime(2026, 7, 29, 12, 6, tzinfo=UTC),
+            stale_claim_seconds=90,
+        )
+        is None
+    )
 
 
 def test_final_record_is_a_terminal_queue_marker() -> None:

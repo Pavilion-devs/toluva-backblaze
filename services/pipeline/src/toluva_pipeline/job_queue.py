@@ -34,6 +34,17 @@ REVISION_REQUEST_PATTERN = re.compile(
     r"(?P<segment>[A-Za-z0-9][A-Za-z0-9_-]{0,127})/"
     r"revision-requests/attempt-(?P<attempt>[1-9][0-9]*)\.json$"
 )
+APPROVED_REVISION_PATTERN = re.compile(
+    r"^(?P<prefix>projects/intake-[a-f0-9]{32}/"
+    r"jobs/localize-[a-f0-9]{32}/de-de/translations/)"
+    r"(?P<segment>[A-Za-z0-9][A-Za-z0-9_-]{0,127})/"
+    r"approved-revisions/attempt-(?P<attempt>[1-9][0-9]*)\.json$"
+)
+FAILED_STATUS_PATTERN = re.compile(
+    r"^projects/intake-[a-f0-9]{32}/jobs/localize-[a-f0-9]{32}/"
+    r"de-de/status/99-failed(?:-after-(?:transcript-review|"
+    r"[A-Za-z0-9][A-Za-z0-9_-]{0,127}-attempt-[1-9][0-9]*))?\.json$"
+)
 ADMISSION_PATTERN = re.compile(
     r"^projects/system-runtime/intake-admissions/"
     r"(?P<day>[0-9]{4}-[0-9]{2}-[0-9]{2})/"
@@ -241,6 +252,39 @@ class JobStatusWriter:
                     f"-{match.group('segment')}-"
                     f"attempt-{match.group('attempt')}.json"
                 )
+        elif stage == "failed":
+            entries = _list_entries(
+                self._backend,
+                f"{self._scope.job_prefix}/translations/",
+            )
+            approvals = tuple(
+                (entry, match)
+                for entry in entries
+                if (
+                    match := APPROVED_REVISION_PATTERN.fullmatch(entry.key)
+                )
+                is not None
+            )
+            if approvals:
+                _, match = max(
+                    approvals,
+                    key=lambda item: (
+                        _utc(item[0].last_modified),
+                        item[0].key,
+                    ),
+                )
+                key = key.removesuffix(".json") + (
+                    f"-after-{match.group('segment')}-"
+                    f"attempt-{match.group('attempt')}.json"
+                )
+            elif self._backend.exists(
+                self._keys.transcript_human_review(
+                    self._scope, JOB_VERSION
+                )
+            ):
+                key = key.removesuffix(".json") + (
+                    "-after-transcript-review.json"
+                )
         if self._backend.exists(key):
             return
         put_immutable(
@@ -414,20 +458,23 @@ def find_next_runnable_job(
             keys.status_event(scope, 14, "completed"),
             keys.status_event(scope, 13, "completed"),
             keys.status_event(scope, 12, "completed"),
-            keys.status_event(scope, 99, "failed"),
             keys.final_record(scope, JOB_VERSION),
         )
         if any(key in entries_by_key for key in terminal_keys):
             continue
-        blocked_key = keys.status_event(scope, 6, "transcript-blocked")
-        review_key = keys.transcript_human_review(scope, JOB_VERSION)
-        if blocked_key in entries_by_key and review_key not in entries_by_key:
-            continue
-        if blocked_key in entries_by_key and review_key in entries_by_key:
-            # The immutable human-review record is an explicit resume signal.
-            # It supersedes the old claim's freshness so the single worker can
-            # continue immediately without repeating transcription.
-            return project_id, job_id
+        failed_entries = tuple(
+            entry
+            for entry_key, entry in entries_by_key.items()
+            if FAILED_STATUS_PATTERN.fullmatch(entry_key)
+        )
+        failed_entry = (
+            max(
+                failed_entries,
+                key=lambda entry: (_utc(entry.last_modified), entry.key),
+            )
+            if failed_entries
+            else None
+        )
         translation_prefix = f"{scope.job_prefix}/translations/"
         revision_request_keys = tuple(
             entry_key
@@ -444,8 +491,32 @@ def find_next_runnable_job(
                 continue
             # An immutable approved revision is an explicit same-job resume
             # signal. The worker reuses prior timing attempts and parent
-            # manifests instead of repeating an ElevenLabs call.
-            return project_id, job_id
+            # manifests instead of repeating an ElevenLabs call. If an older
+            # build left an immutable failure marker, only a later approval may
+            # supersede it; an old approval must never create a retry loop.
+            approval_entries = tuple(
+                entries_by_key[_revision_approval_key(request_key)]
+                for request_key in revision_request_keys
+            )
+            if failed_entry is None or max(
+                _utc(entry.last_modified) for entry in approval_entries
+            ) > _utc(failed_entry.last_modified):
+                return project_id, job_id
+        blocked_key = keys.status_event(scope, 6, "transcript-blocked")
+        review_key = keys.transcript_human_review(scope, JOB_VERSION)
+        if blocked_key in entries_by_key and review_key not in entries_by_key:
+            continue
+        if blocked_key in entries_by_key and review_key in entries_by_key:
+            # The immutable human-review record is an explicit resume signal.
+            # It may supersede an older failure, but never a newer one; that
+            # prevents an unchanged failed job from spinning forever.
+            review_entry = entries_by_key[review_key]
+            if failed_entry is None or _utc(
+                review_entry.last_modified
+            ) > _utc(failed_entry.last_modified):
+                return project_id, job_id
+        if failed_entry is not None:
+            continue
         claim_entry = entries_by_key.get(
             keys.status_event(scope, 2, "claimed")
         )
