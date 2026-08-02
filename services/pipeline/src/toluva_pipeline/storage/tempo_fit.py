@@ -69,6 +69,9 @@ def _tempo_factor(attempt: CorrectionAttempt) -> float:
 
 def build_approved_local_tempo_fit_record(
     *,
+    project_id: str,
+    job_id: str,
+    segment_id: str,
     timing_record: object,
     timing_record_bytes: bytes,
     timing_attempt_key: str,
@@ -119,17 +122,18 @@ def build_approved_local_tempo_fit_record(
         revision_request.get("record_type")
         != "translation_revision_request"
         or revision_attempt_number != attempt.retry_number
-        or revision_request.get("segment_id")
-        != timing_record.get("segment_id")
+        or revision_request.get("project_id") != project_id
+        or revision_request.get("job_id") != job_id
+        or revision_request.get("segment_id") != segment_id
     ):
         raise ValueError("superseded revision request does not match the attempt")
     return {
         "schema_version": "1.0",
         "record_type": "approved_local_tempo_fit",
         "decision": "approved",
-        "project_id": timing_record["project_id"],
-        "job_id": timing_record["job_id"],
-        "segment_id": timing_record["segment_id"],
+        "project_id": project_id,
+        "job_id": job_id,
+        "segment_id": segment_id,
         "attempt_number": attempt.context.attempt_number,
         "timing_attempt_key": timing_attempt_key,
         "timing_attempt_sha256": _sha256(timing_record_bytes),
@@ -209,6 +213,9 @@ class B2ApprovedLocalTempoFitStore:
         revision_bytes = self._backend.get(revision_key)
         audio_bytes = self._backend.get(attempt.speech.audio_key)
         payload = build_approved_local_tempo_fit_record(
+            project_id=self._scope.project_id,
+            job_id=self._scope.job_id,
+            segment_id=segment_id,
             timing_record=timing_record,
             timing_record_bytes=timing_bytes,
             timing_attempt_key=timing_key,

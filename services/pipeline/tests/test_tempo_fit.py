@@ -95,6 +95,8 @@ def seeded_store() -> tuple[
     ] = json.dumps(
         {
             "record_type": "translation_revision_request",
+            "project_id": scope.project_id,
+            "job_id": scope.job_id,
             "segment_id": "segment-002",
             "attempt_number": 3,
         }
