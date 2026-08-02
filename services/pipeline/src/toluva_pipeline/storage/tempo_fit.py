@@ -85,7 +85,7 @@ def build_approved_local_tempo_fit_record(
         raise ValueError("timing attempt must be a JSON object")
     attempt = correction_attempt_from_dict(timing_record)
     factor = _tempo_factor(attempt)
-    if attempt.timing_direction != "over":
+    if attempt.timing_direction != "overlong":
         raise ValueError("local tempo fit requires overlong timing evidence")
     if attempt.retry_number is None:
         raise ValueError("timing attempt has no outstanding retry to supersede")

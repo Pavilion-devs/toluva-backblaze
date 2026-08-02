@@ -60,7 +60,7 @@ def attempt() -> CorrectionAttempt:
         drift_ratio=0.08877735888574702,
         absolute_drift_ratio=0.08877735888574702,
         timing_band="amber",
-        timing_direction="over",
+        timing_direction="overlong",
         timing_action="retry_shorter",
         reason="Overlong amber speech requires a shorter retry.",
         retry_number=3,
