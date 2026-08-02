@@ -583,23 +583,19 @@ def _reviewed_timed_transcript(
     transcript: TimedTranscript,
     corrected_text: str,
 ) -> TimedTranscript:
-    """Reflow approved words across the preserved provider time slots.
+    """Bind approved sentences to the preserved provider timing evidence.
 
     Whisper segments are timing phrases, not sentence boundaries.  A human
     correction may therefore contain fewer sentences than the provider emitted
-    slots even when it preserves the exact spoken wording.  Keep every original
-    slot and distribute the normalized correction by the provider segments'
-    relative word counts so review does not invent or discard timing.
+    slots even when it preserves the exact spoken wording.  Preserve the raw
+    provider segments in B2, but coalesce adjacent phrases into approved
+    sentence slots for translation and speech.  When a correction contains more
+    sentences than provider slots, distribute its words proportionally without
+    inventing new timing boundaries.
     """
 
     corrected_words = corrected_text.strip().split()
     segment_count = len(transcript.segments)
-    if len(corrected_words) < segment_count:
-        raise EndToEndIntegrityError(
-            "A transcript correction must contain at least one word for every "
-            "preserved timed source segment"
-        )
-
     approved_sentences = tuple(
         match.group(0).strip()
         for match in re.finditer(
@@ -608,19 +604,70 @@ def _reviewed_timed_transcript(
         )
         if match.group(0).strip()
     )
-    if segment_count == 1:
-        replacements = (" ".join(corrected_words),)
-    elif len(approved_sentences) == segment_count:
-        replacements = approved_sentences
-    else:
-        source_word_counts = tuple(
-            max(1, len(segment.text.split()))
-            for segment in transcript.segments
+    if not approved_sentences:
+        raise EndToEndIntegrityError(
+            "The reviewed transcript did not contain an approved sentence"
         )
+    source_word_counts = tuple(
+        max(1, len(segment.text.split()))
+        for segment in transcript.segments
+    )
+
+    if len(approved_sentences) <= segment_count:
         source_word_total = sum(source_word_counts)
+        approved_word_counts = tuple(
+            len(sentence.split()) for sentence in approved_sentences
+        )
+        approved_word_total = sum(approved_word_counts)
+        boundaries: list[int] = [0]
+        cumulative_approved_words = 0
+        for sentence_index, sentence_words in enumerate(
+            approved_word_counts[:-1]
+        ):
+            cumulative_approved_words += sentence_words
+            target_fraction = (
+                cumulative_approved_words / approved_word_total
+            )
+            remaining_sentences = len(approved_sentences) - sentence_index - 1
+            first_boundary = boundaries[-1] + 1
+            last_boundary = segment_count - remaining_sentences
+            boundary = min(
+                range(first_boundary, last_boundary + 1),
+                key=lambda candidate: abs(
+                    sum(source_word_counts[:candidate]) / source_word_total
+                    - target_fraction
+                ),
+            )
+            boundaries.append(boundary)
+        boundaries.append(segment_count)
+
+        reviewed_segments: list[TimedSegment] = []
+        for sentence, start, end in zip(
+            approved_sentences,
+            boundaries[:-1],
+            boundaries[1:],
+            strict=True,
+        ):
+            source_group = transcript.segments[start:end]
+            speaker_ids = {segment.speaker_id for segment in source_group}
+            if len(speaker_ids) != 1:
+                raise EndToEndIntegrityError(
+                    "A reviewed sentence cannot merge multiple speakers"
+                )
+            reviewed_segments.append(
+                TimedSegment(
+                    segment_id=source_group[0].segment_id,
+                    start_seconds=source_group[0].start_seconds,
+                    end_seconds=source_group[-1].end_seconds,
+                    text=sentence,
+                    speaker_id=source_group[0].speaker_id,
+                )
+            )
+    else:
         cursor = 0
         cumulative_source_words = 0
         replacement_parts: list[str] = []
+        source_word_total = sum(source_word_counts)
         for index, source_word_count in enumerate(source_word_counts[:-1]):
             cumulative_source_words += source_word_count
             proportional_cut = round(
@@ -639,17 +686,7 @@ def _reviewed_timed_transcript(
             replacement_parts.append(" ".join(corrected_words[cursor:cut]))
             cursor = cut
         replacement_parts.append(" ".join(corrected_words[cursor:]))
-        replacements = tuple(replacement_parts)
-
-    if " ".join(replacements) != " ".join(corrected_words):
-        raise EndToEndIntegrityError(
-            "The reviewed transcript could not be bound to its timed slots"
-        )
-    return TimedTranscript(
-        language=transcript.language,
-        source=transcript.source,
-        source_asset_sha256=transcript.source_asset_sha256,
-        segments=tuple(
+        reviewed_segments = [
             TimedSegment(
                 segment_id=segment.segment_id,
                 start_seconds=segment.start_seconds,
@@ -659,10 +696,22 @@ def _reviewed_timed_transcript(
             )
             for segment, replacement in zip(
                 transcript.segments,
-                replacements,
+                replacement_parts,
                 strict=True,
             )
-        ),
+        ]
+
+    if " ".join(segment.text for segment in reviewed_segments) != " ".join(
+        corrected_words
+    ):
+        raise EndToEndIntegrityError(
+            "The reviewed transcript could not be bound to its timed slots"
+        )
+    return TimedTranscript(
+        language=transcript.language,
+        source=transcript.source,
+        source_asset_sha256=transcript.source_asset_sha256,
+        segments=tuple(reviewed_segments),
     )
 
 

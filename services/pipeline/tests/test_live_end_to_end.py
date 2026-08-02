@@ -103,7 +103,7 @@ def test_reviewed_multi_segment_transcript_preserves_provider_slots() -> None:
     ] == [(0.2, 1.4), (1.8, 3.0)]
 
 
-def test_reviewed_transcript_reflows_sentences_across_phrase_slots() -> None:
+def test_reviewed_transcript_coalesces_phrases_into_approved_sentences() -> None:
     transcript = TimedTranscript(
         language="eng",
         source="provider",
@@ -136,22 +136,21 @@ def test_reviewed_transcript_reflows_sentences_across_phrase_slots() -> None:
 
     assert [segment.text for segment in reviewed.segments] == [
         "Welcome to Toluva.",
-        "One Apple video can reach everything with timing,",
-        "voice,",
-        "and evidence on the control.",
+        (
+            "One Apple video can reach everything with timing, voice, and "
+            "evidence on the control."
+        ),
     ]
     assert [
         (segment.start_seconds, segment.end_seconds)
         for segment in reviewed.segments
     ] == [
         (0.0, 2.44),
-        (2.44, 7.35),
-        (7.35, 8.37),
-        (8.37, 11.989),
+        (2.44, 11.989),
     ]
 
 
-def test_reviewed_multi_segment_transcript_requires_one_word_per_slot() -> None:
+def test_reviewed_sentence_can_span_multiple_phrase_slots() -> None:
     transcript = TimedTranscript(
         language="eng",
         source="provider",
@@ -161,8 +160,10 @@ def test_reviewed_multi_segment_transcript_requires_one_word_per_slot() -> None:
             TimedSegment("segment-002", 1.8, 3.0, "Second fragment."),
         ),
     )
-    with pytest.raises(RuntimeError, match="one word"):
-        _reviewed_timed_transcript(
-            transcript,
-            "Toluva",
-        )
+    reviewed = _reviewed_timed_transcript(transcript, "Toluva")
+
+    assert len(reviewed.segments) == 1
+    assert reviewed.segments[0].segment_id == "segment-001"
+    assert reviewed.segments[0].text == "Toluva"
+    assert reviewed.segments[0].start_seconds == 0.2
+    assert reviewed.segments[0].end_seconds == 3.0
