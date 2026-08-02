@@ -3,11 +3,22 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useState } from "react";
-import { dateLabel, megabytes, percent, readableAction } from "../../../../../lib/format";
+import {
+  dateLabel,
+  megabytes,
+  percent,
+  readableAction,
+  seconds,
+} from "../../../../../lib/format";
+import {
+  MAX_TTS_CALLS_PER_JOB,
+  MAX_TTS_CHARACTERS_PER_JOB,
+} from "../../../../../lib/job-contract";
 import {
   buttonClass,
   Chip,
   EmptyState,
+  Hash,
   MetaLabel,
   PageHeader,
   Panel,
@@ -370,13 +381,69 @@ export default function RunDetailPage() {
         )}
 
       {job.finalAvailable && (
-        <Panel eyebrow="New localized output" title="German edition">
+        <Panel
+          actions={<Chip tone="green">Ready to review</Chip>}
+          eyebrow="Completed localization"
+          title="Your German edition is ready"
+        >
+          {job.finalSummary && (
+            <>
+              <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <ResultMetric
+                  detail={`of ${MAX_TTS_CALLS_PER_JOB} allowed`}
+                  label="Speech calls"
+                  value={String(job.finalSummary.ttsAttemptCount)}
+                />
+                <ResultMetric
+                  detail={`of ${MAX_TTS_CHARACTERS_PER_JOB} allowed`}
+                  label="Generated text"
+                  value={`${job.finalSummary.ttsGeneratedCharacters} chars`}
+                />
+                <ResultMetric
+                  detail="sentence-aligned slots"
+                  label="Timed segments"
+                  value={String(job.finalSummary.segmentCount)}
+                />
+                <ResultMetric
+                  detail={
+                    job.finalSummary.localTempoFactor
+                      ? "approved local fit"
+                      : readableAction(job.finalSummary.timingAction)
+                  }
+                  label="Timing fit"
+                  value={
+                    job.finalSummary.localTempoFactor
+                      ? `${job.finalSummary.localTempoFactor.toFixed(4)}×`
+                      : job.finalSummary.timingBand
+                  }
+                />
+              </div>
+
+              <div className="mb-5 grid gap-3 rounded-2xl border border-fit-green/20 bg-fit-green-soft/55 p-4 md:grid-cols-[1fr_auto] md:items-center">
+                <div>
+                  <strong className="block text-body font-semibold text-ink">
+                    Voice authorized · timing measured · final stored in B2
+                  </strong>
+                  <p className="mt-1 text-caption text-slate-600">
+                    {job.finalSummary.captionsEmbedded
+                      ? "German captions are embedded and available as WebVTT."
+                      : "German captions are available as a WebVTT sidecar."}{" "}
+                    Final duration {seconds(job.finalSummary.finalDurationSeconds)}.
+                  </p>
+                </div>
+                <Chip tone="green">
+                  {readableAction(job.finalSummary.authorizationCode)}
+                </Chip>
+              </div>
+            </>
+          )}
+
           <p className="mb-4 text-body text-slate-500">
-            The player resolves media only from this job&apos;s immutable final
-            record.
+            This player and both downloads resolve only from this job&apos;s
+            immutable final record.
           </p>
           <video
-            className="aspect-video w-full rounded-2xl bg-ink"
+            className="localized-player aspect-video w-full rounded-2xl bg-ink"
             controls
             preload="metadata"
             src={`/api/job-media?project=${job.projectId}&job=${job.jobId}&kind=final`}
@@ -389,8 +456,57 @@ export default function RunDetailPage() {
               srcLang="de"
             />
           </video>
+
+          <div className="mt-5 flex flex-col gap-4 rounded-2xl border border-slate-100 bg-cream/55 p-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="min-w-0">
+              <MetaLabel>Verified final SHA-256</MetaLabel>
+              {job.finalSummary ? (
+                <Hash value={job.finalSummary.finalSha256} />
+              ) : (
+                <p className="text-caption text-slate-500">
+                  The immutable final record is available in B2.
+                </p>
+              )}
+            </div>
+            <div className="flex shrink-0 flex-wrap gap-2">
+              <a
+                className={buttonClass("secondary")}
+                download={`${job.jobId}-de.vtt`}
+                href={`/api/job-media?project=${job.projectId}&job=${job.jobId}&kind=captions`}
+              >
+                Download captions
+              </a>
+              <a
+                className={buttonClass("primary")}
+                download={`${job.jobId}-de.mp4`}
+                href={`/api/job-media?project=${job.projectId}&job=${job.jobId}&kind=final`}
+              >
+                Download German MP4
+              </a>
+            </div>
+          </div>
         </Panel>
       )}
+    </div>
+  );
+}
+
+function ResultMetric({
+  detail,
+  label,
+  value,
+}: {
+  detail: string;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-slate-100 bg-cream/60 p-4">
+      <MetaLabel>{label}</MetaLabel>
+      <strong className="block font-mono text-lg font-semibold tabular-nums text-ink">
+        {value}
+      </strong>
+      <span className="mt-1 block text-caption text-slate-500">{detail}</span>
     </div>
   );
 }

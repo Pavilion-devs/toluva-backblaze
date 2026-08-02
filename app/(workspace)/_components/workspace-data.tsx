@@ -9,7 +9,11 @@ import {
   useState,
 } from "react";
 import { VERIFIED_RUN_SNAPSHOT, type VerifiedRun } from "../../../lib/verified-run";
-import type { JobEvent, JobState } from "../../../lib/job-contract";
+import type {
+  CompletedJobSummary,
+  JobEvent,
+  JobState,
+} from "../../../lib/job-contract";
 
 export type ConnectionState = "checking" | "live" | "snapshot";
 export type WorkerConnectionState =
@@ -39,6 +43,7 @@ export type TimingReview = {
 export type ActiveJob = {
   events: JobEvent[];
   finalAvailable: boolean;
+  finalSummary?: CompletedJobSummary;
   jobId: string;
   projectId: string;
   request: {

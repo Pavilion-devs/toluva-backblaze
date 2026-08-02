@@ -2440,6 +2440,21 @@ Final evidence:
   `193201` retained their exact start times throughout all three Toluva-only
   cutovers. No command targeted or restarted a Dara or Cloudflare service.
 
+### 2026-08-02 — Completed-run presentation hardening
+
+Decision: Freeze the verified engine and make its outcome immediately legible
+on every completed uploaded-job page. The result view now reads call count,
+generated characters, segment count, timing action, bounded local tempo factor,
+authorization decision, caption state, duration, and final SHA-256 from that
+job's immutable B2 final record. It also exposes same-origin downloads for the
+final German MP4 and WebVTT sidecar.
+
+The browser caption presentation is reduced to a compact subtitle treatment
+through CSS while leaving the stored WebVTT sidecar, embedded `mov_text` track,
+final MP4, hashes, provider accounting, and B2 evidence unchanged. This phase
+does not run Whisper, Argos, ElevenLabs, Genblaze, or FFmpeg and makes no worker
+or VPS change.
+
 ## 22. Official References
 
 Hackathon:

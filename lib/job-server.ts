@@ -29,17 +29,30 @@ import {
   transcriptQualityKey,
   translationApprovedRevisionKey,
   translationRevisionRequestKey,
+  type CompletedJobSummary,
   type JobEvent,
   type QueueRequest,
 } from "./job-contract";
 
 type CompletedJobRecord = {
+  authorization_code: string;
+  captions_embedded: boolean;
   captions_key: string;
+  final_asset_sha256: string;
   final_asset_key: string;
+  final_duration_seconds: number;
   job_id: string;
+  local_tempo_fit_approvals?: Array<{
+    tempo_factor?: unknown;
+  }>;
   project_id: string;
+  segment_count: number;
   selected_speech_key: string;
   source_key: string;
+  timing_action: string;
+  timing_band: string;
+  tts_attempt_count: number;
+  tts_generated_characters: number;
 };
 
 export type JobMediaKind = "source" | "final" | "captions" | "speech";
@@ -136,6 +149,50 @@ type TimingRevisionContext = {
 const REVISION_REQUEST_SUFFIX =
   /^([A-Za-z0-9][A-Za-z0-9_-]{0,127})\/revision-requests\/attempt-([1-9][0-9]*)\.json$/;
 const SHA256 = /^[a-f0-9]{64}$/;
+
+function completedJobSummary(
+  record: CompletedJobRecord,
+): CompletedJobSummary {
+  const timingBand = record.timing_band;
+  const tempoFactors = (record.local_tempo_fit_approvals ?? [])
+    .map(({ tempo_factor }) => Number(tempo_factor))
+    .filter((value) => Number.isFinite(value) && value >= 1 && value <= 1.09);
+  if (
+    typeof record.authorization_code !== "string" ||
+    record.authorization_code.length < 1 ||
+    typeof record.captions_embedded !== "boolean" ||
+    !SHA256.test(record.final_asset_sha256) ||
+    !Number.isFinite(record.final_duration_seconds) ||
+    record.final_duration_seconds <= 0 ||
+    record.final_duration_seconds > MAX_CLIP_SECONDS + 1 ||
+    !Number.isSafeInteger(record.segment_count) ||
+    record.segment_count < 1 ||
+    typeof record.timing_action !== "string" ||
+    record.timing_action.length < 1 ||
+    !["green", "amber", "red"].includes(timingBand) ||
+    !Number.isSafeInteger(record.tts_attempt_count) ||
+    record.tts_attempt_count < 1 ||
+    record.tts_attempt_count > MAX_TTS_CALLS_PER_JOB ||
+    !Number.isSafeInteger(record.tts_generated_characters) ||
+    record.tts_generated_characters < 1 ||
+    record.tts_generated_characters > MAX_TTS_CHARACTERS_PER_JOB
+  ) {
+    throw new Error("completed_job_summary_invalid");
+  }
+  return {
+    authorizationCode: record.authorization_code,
+    captionsEmbedded: record.captions_embedded,
+    finalDurationSeconds: record.final_duration_seconds,
+    finalSha256: record.final_asset_sha256,
+    localTempoFactor:
+      tempoFactors.length > 0 ? Math.max(...tempoFactors) : null,
+    segmentCount: record.segment_count,
+    timingAction: record.timing_action,
+    timingBand: timingBand as CompletedJobSummary["timingBand"],
+    ttsAttemptCount: record.tts_attempt_count,
+    ttsGeneratedCharacters: record.tts_generated_characters,
+  };
+}
 
 function compactUuid(prefix: string): string {
   return `${prefix}-${crypto.randomUUID().replaceAll("-", "")}`;
@@ -359,6 +416,7 @@ export async function readJobStatus(
 ): Promise<{
   events: JobEvent[];
   finalAvailable: boolean;
+  finalSummary?: CompletedJobSummary;
   jobId: string;
   projectId: string;
   request: Pick<
@@ -449,12 +507,19 @@ export async function readJobStatus(
     `${prefix}/final/${JOB_VERSION}.json`,
   );
   const expectedFinal = finalRecordKey(projectId, jobId);
+  const finalAvailable = finalFiles.some(
+    (file) => file.fileName === expectedFinal,
+  );
+  const finalSummary = finalAvailable
+    ? completedJobSummary(
+        await getB2ProjectJson<CompletedJobRecord>(expectedFinal),
+      )
+    : undefined;
 
   return {
     events: validEvents,
-    finalAvailable: finalFiles.some(
-      (file) => file.fileName === expectedFinal,
-    ),
+    finalAvailable,
+    ...(finalSummary ? { finalSummary } : {}),
     jobId,
     projectId,
     request: {

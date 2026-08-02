@@ -324,3 +324,28 @@ test("removes starter-only assets and preserves bounded intake wiring", async ()
   await assert.rejects(access(new URL("../app/_sites-preview", import.meta.url)));
   await access(new URL("public/og.png", templateRoot));
 });
+
+test("completed jobs expose dynamic result evidence and compact captions", async () => {
+  const [runDetail, jobServer, globalCss] = await Promise.all([
+    readFile(
+      new URL(
+        "../app/(workspace)/workspace/runs/[id]/page.tsx",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+    readFile(new URL("../lib/job-server.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(runDetail, /Your German edition is ready/);
+  assert.match(runDetail, /job\.finalSummary\.ttsAttemptCount/);
+  assert.match(runDetail, /job\.finalSummary\.ttsGeneratedCharacters/);
+  assert.match(runDetail, /job\.finalSummary\.localTempoFactor/);
+  assert.match(runDetail, /Download German MP4/);
+  assert.match(runDetail, /Download captions/);
+  assert.match(runDetail, /localized-player/);
+  assert.match(jobServer, /completedJobSummary/);
+  assert.match(jobServer, /completed_job_summary_invalid/);
+  assert.match(globalCss, /\.localized-player::cue/);
+});

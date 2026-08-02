@@ -21,6 +21,19 @@ export type JobState =
   | "failed"
   | "completed";
 
+export type CompletedJobSummary = {
+  authorizationCode: string;
+  captionsEmbedded: boolean;
+  finalDurationSeconds: number;
+  finalSha256: string;
+  localTempoFactor: number | null;
+  segmentCount: number;
+  timingAction: string;
+  timingBand: "green" | "amber" | "red";
+  ttsAttemptCount: number;
+  ttsGeneratedCharacters: number;
+};
+
 export type JobEvent = {
   created_at: string;
   job_id: string;
