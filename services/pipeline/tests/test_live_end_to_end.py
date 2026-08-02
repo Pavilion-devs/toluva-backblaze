@@ -103,7 +103,55 @@ def test_reviewed_multi_segment_transcript_preserves_provider_slots() -> None:
     ] == [(0.2, 1.4), (1.8, 3.0)]
 
 
-def test_reviewed_multi_segment_transcript_rejects_slot_count_change() -> None:
+def test_reviewed_transcript_reflows_sentences_across_phrase_slots() -> None:
+    transcript = TimedTranscript(
+        language="eng",
+        source="provider",
+        source_asset_sha256="a" * 64,
+        segments=(
+            TimedSegment("segment-001", 0.0, 2.44, "Welcome to Toluva."),
+            TimedSegment(
+                "segment-002",
+                2.44,
+                7.35,
+                "One Apple video can reach everything with timing,",
+            ),
+            TimedSegment("segment-003", 7.35, 8.37, "voice,"),
+            TimedSegment(
+                "segment-004",
+                8.37,
+                11.989,
+                "and evidence on the control.",
+            ),
+        ),
+    )
+
+    reviewed = _reviewed_timed_transcript(
+        transcript,
+        (
+            "Welcome to Toluva. One Apple video can reach everything with "
+            "timing, voice, and evidence on the control."
+        ),
+    )
+
+    assert [segment.text for segment in reviewed.segments] == [
+        "Welcome to Toluva.",
+        "One Apple video can reach everything with timing,",
+        "voice,",
+        "and evidence on the control.",
+    ]
+    assert [
+        (segment.start_seconds, segment.end_seconds)
+        for segment in reviewed.segments
+    ] == [
+        (0.0, 2.44),
+        (2.44, 7.35),
+        (7.35, 8.37),
+        (8.37, 11.989),
+    ]
+
+
+def test_reviewed_multi_segment_transcript_requires_one_word_per_slot() -> None:
     transcript = TimedTranscript(
         language="eng",
         source="provider",
@@ -113,8 +161,8 @@ def test_reviewed_multi_segment_transcript_rejects_slot_count_change() -> None:
             TimedSegment("segment-002", 1.8, 3.0, "Second fragment."),
         ),
     )
-    with pytest.raises(RuntimeError, match="one sentence"):
+    with pytest.raises(RuntimeError, match="one word"):
         _reviewed_timed_transcript(
             transcript,
-            "Welcome to Toluva without a second approved sentence.",
+            "Toluva",
         )

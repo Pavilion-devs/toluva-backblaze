@@ -583,24 +583,68 @@ def _reviewed_timed_transcript(
     transcript: TimedTranscript,
     corrected_text: str,
 ) -> TimedTranscript:
-    """Apply one approved sentence to each preserved provider time slot."""
+    """Reflow approved words across the preserved provider time slots.
 
-    if len(transcript.segments) == 1:
-        replacements = (corrected_text.strip(),)
-    else:
-        replacements = tuple(
-            match.group(0).strip()
-            for match in re.finditer(
-                r"[^.!?]+(?:[.!?]+(?=\s|$)|$)",
-                corrected_text.strip(),
-            )
-            if match.group(0).strip()
+    Whisper segments are timing phrases, not sentence boundaries.  A human
+    correction may therefore contain fewer sentences than the provider emitted
+    slots even when it preserves the exact spoken wording.  Keep every original
+    slot and distribute the normalized correction by the provider segments'
+    relative word counts so review does not invent or discard timing.
+    """
+
+    corrected_words = corrected_text.strip().split()
+    segment_count = len(transcript.segments)
+    if len(corrected_words) < segment_count:
+        raise EndToEndIntegrityError(
+            "A transcript correction must contain at least one word for every "
+            "preserved timed source segment"
         )
-        if len(replacements) != len(transcript.segments):
-            raise EndToEndIntegrityError(
-                "A multi-segment transcript correction must preserve one "
-                "sentence per timed source segment"
+
+    approved_sentences = tuple(
+        match.group(0).strip()
+        for match in re.finditer(
+            r"[^.!?]+(?:[.!?]+(?=\s|$)|$)",
+            " ".join(corrected_words),
+        )
+        if match.group(0).strip()
+    )
+    if segment_count == 1:
+        replacements = (" ".join(corrected_words),)
+    elif len(approved_sentences) == segment_count:
+        replacements = approved_sentences
+    else:
+        source_word_counts = tuple(
+            max(1, len(segment.text.split()))
+            for segment in transcript.segments
+        )
+        source_word_total = sum(source_word_counts)
+        cursor = 0
+        cumulative_source_words = 0
+        replacement_parts: list[str] = []
+        for index, source_word_count in enumerate(source_word_counts[:-1]):
+            cumulative_source_words += source_word_count
+            proportional_cut = round(
+                len(corrected_words)
+                * cumulative_source_words
+                / source_word_total
             )
+            remaining_segments = segment_count - index - 1
+            cut = max(
+                cursor + 1,
+                min(
+                    proportional_cut,
+                    len(corrected_words) - remaining_segments,
+                ),
+            )
+            replacement_parts.append(" ".join(corrected_words[cursor:cut]))
+            cursor = cut
+        replacement_parts.append(" ".join(corrected_words[cursor:]))
+        replacements = tuple(replacement_parts)
+
+    if " ".join(replacements) != " ".join(corrected_words):
+        raise EndToEndIntegrityError(
+            "The reviewed transcript could not be bound to its timed slots"
+        )
     return TimedTranscript(
         language=transcript.language,
         source=transcript.source,
