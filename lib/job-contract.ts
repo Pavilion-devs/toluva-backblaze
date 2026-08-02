@@ -1,7 +1,9 @@
 export const JOB_LANGUAGE = "de-DE";
 export const JOB_PURPOSE = "internal-training";
 export const JOB_VERSION = "live-v1";
-export const MAX_UPLOAD_BYTES = 12 * 1024 * 1024;
+// Keep the file comfortably below the hosted multipart request ceiling. The
+// envelope adds its own bytes before the route handler can inspect the file.
+export const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
 export const MIN_CLIP_SECONDS = 1;
 export const MAX_CLIP_SECONDS = 30;
 export const MAX_TTS_CALLS_PER_JOB = 4;

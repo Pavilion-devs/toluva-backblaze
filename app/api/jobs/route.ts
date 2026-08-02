@@ -53,6 +53,8 @@ export async function POST(request: Request) {
         message:
           code === "public_daily_job_limit_reached"
             ? "Today’s bounded localization capacity is full. Try again after 00:00 UTC."
+            : code === "source_size_out_of_range"
+              ? "Choose an MP4 no larger than the hosted 8 MB intake limit."
             : code in ERROR_STATUS
               ? "The upload did not meet the governed intake contract."
             : "The job could not be written durably. No provider was called.",

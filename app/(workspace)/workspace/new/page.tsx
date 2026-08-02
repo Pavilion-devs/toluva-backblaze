@@ -29,6 +29,33 @@ import {
 
 type UploadState = "idle" | "inspecting" | "ready" | "uploading" | "error";
 
+type JobCreationPayload = {
+  job?: { jobId: string; projectId: string; statusUrl: string };
+  message?: string;
+  ok?: boolean;
+};
+
+async function readJobCreationPayload(
+  response: Response,
+): Promise<JobCreationPayload> {
+  const raw = await response.text();
+  if ((response.headers.get("content-type") ?? "").includes("application/json")) {
+    try {
+      return JSON.parse(raw) as JobCreationPayload;
+    } catch {
+      // Fall through to a stable public error instead of exposing a parser
+      // exception from an upstream gateway response.
+    }
+  }
+  return {
+    message:
+      response.status === 413
+        ? `The hosted upload limit was exceeded. Choose an MP4 no larger than ${megabytes(MAX_UPLOAD_BYTES)}.`
+        : "The public upload gateway could not accept this file. No provider was called.",
+    ok: false,
+  };
+}
+
 /** Reads duration from the local file so the clip is checked before upload. */
 async function inspectVideo(file: File): Promise<number> {
   const objectUrl = URL.createObjectURL(file);
@@ -135,7 +162,9 @@ export default function NewLocalizationPage() {
     }
     if (file.size < 1 || file.size > MAX_UPLOAD_BYTES) {
       setState("error");
-      setError("The MP4 must be no larger than 12 MB.");
+      setError(
+        `The MP4 must be no larger than ${megabytes(MAX_UPLOAD_BYTES)}.`,
+      );
       return;
     }
 
@@ -175,11 +204,7 @@ export default function NewLocalizationPage() {
         String(disclosureAcknowledged),
       );
       const response = await fetch("/api/jobs", { body: form, method: "POST" });
-      const payload = (await response.json()) as {
-        job?: { jobId: string; projectId: string; statusUrl: string };
-        message?: string;
-        ok?: boolean;
-      };
+      const payload = await readJobCreationPayload(response);
       if (!response.ok || !payload.ok || !payload.job) {
         throw new Error(payload.message ?? "job_creation_failed");
       }

@@ -909,7 +909,7 @@ Durable upload and queue slice completed:
 - Added a governed Sites-hosted MP4 intake for the first deliberately narrow
   lane: 1–8 second, single-turn English clips to German internal training using
   the disclosed stock synthetic voice and protected term `Toluva`.
-- The server validates MIME type, 12 MB size limit, client-measured duration,
+- The server validates MIME type, 8 MB hosted size limit, client-measured duration,
   target language, and purpose before writing. The browser never receives a B2
   or provider credential.
 - A fresh request creates opaque project, job, and source IDs. It writes the
@@ -1996,7 +1996,7 @@ spend control across worker and web-process restarts.
 ### 2026-07-30 — Thirty-second governed intake window
 
 Decision: Accept one-speaker English MP4s from 1 to 30 seconds while preserving
-the existing 12 MB upload ceiling, German internal-training authorization, and
+the hosted 8 MB upload ceiling, German internal-training authorization, and
 protected `Toluva` term.
 
 Reason: The previous eight-second ceiling biased tests toward a single Whisper
@@ -2348,6 +2348,21 @@ so it can be retried, allows Remove followed by reselecting the exact same file,
 and ignores stale metadata inspection results when a newer drag-and-drop
 selection wins. These are client-only resilience changes; B2 admission,
 authorization, disclosure, provider budgets, and worker behavior are unchanged.
+
+### 2026-08-02 — Hosted multipart boundary
+
+Finding: the first operator rehearsal used a 12.54 MB multipart source that was
+under the original 12 MiB file check but exceeded the public hosting edge's
+request-body ceiling once the multipart envelope was included. The edge
+returned HTTP 413 before the Toluva route ran, so no admission slot, B2 job, or
+provider call was created.
+
+Decision: lower the shared client/server source limit to 8 MiB, leaving safe
+headroom for the hosted multipart envelope. The upload client now reads both
+JSON and non-JSON gateway responses and turns HTTP 413 into stable, human-
+readable guidance rather than exposing a JSON parser exception. The production
+build, 19 rendered web/API tests, and all 131 pipeline tests passed after the
+change; the queue-v5 worker and provider budget contract are unchanged.
 
 ## 22. Official References
 

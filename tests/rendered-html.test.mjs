@@ -151,6 +151,7 @@ test("new localization renders the real bounded upload workflow", async () => {
   assert.match(html, /disclosed ElevenLabs stock synthetic voice/i);
   assert.match(html, /Bounded public capacity/i);
   assert.match(html, /generated characters per job/i);
+  assert.match(html, /8\.00/);
   assert.doesNotMatch(html, /judge mode/i);
 });
 
