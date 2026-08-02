@@ -1,7 +1,7 @@
 # Toluva — Product, Architecture, and Win Plan
 
 Last updated: August 2, 2026
-Status: public Sites v20 product experience deployed at `usetoluva.xyz`; live upload/review/resume flow verified end to end on an entrant-uploaded 11.989-second clip; the exact same B2 job completed with four ElevenLabs calls, 310 characters, a hash-bound 1.088777× local tempo fit under a segment-only 1.09× approval, nine project manifests, embedded German captions, and a recomputed final MP4 hash; VPS worker source `741eaf6` is healthy and idle on the verified queue-v7 runtime
+Status: public Sites v21 product experience deployed at `usetoluva.xyz`; completed jobs now surface immutable B2 outcome metrics, compact captions, final hashes, and direct deliverable downloads; live upload/review/resume flow remains verified end to end on an entrant-uploaded 11.989-second clip; the exact same B2 job completed with four ElevenLabs calls, 310 characters, a hash-bound 1.088777× local tempo fit under a segment-only 1.09× approval, nine project manifests, embedded German captions, and a recomputed final MP4 hash; VPS worker source `741eaf6` is healthy and idle on the verified queue-v7 runtime
 Submission deadline: August 3, 2026 at 10:00 p.m. WAT  
 Internal submission target: August 3, 2026 at 6:00 p.m. WAT
 
@@ -2454,6 +2454,11 @@ through CSS while leaving the stored WebVTT sidecar, embedded `mov_text` track,
 final MP4, hashes, provider accounting, and B2 evidence unchanged. This phase
 does not run Whisper, Argos, ElevenLabs, Genblaze, or FFmpeg and makes no worker
 or VPS change.
+
+Release evidence: commit `18c217b6a53abf94dc569f6a0a4a72c181293495`
+was saved and deployed as public Sites version 21. The canonical custom domain
+returned HTTP 200 after deployment. UI lint, the Node 24 Vinext production
+build, all 22 rendered web/API tests, and all 140 pipeline tests passed.
 
 ## 22. Official References
 
