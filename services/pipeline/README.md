@@ -377,10 +377,10 @@ stores its root-only environment at `/etc/toluva/worker.env`. See
 `deploy/vps/README.md`.
 
 The deployed service uses the immutable tag
-`toluva-worker:queue-v4-39b1b9a`, built from the governed multi-segment,
-timing-approval, sentence-aware segmentation, and bounded tempo-fit source
-revision. Its verified production image ID is
-`sha256:c453d0c7d563953c6dea837d1aedf8b3425d169306a60cf7f7d19efbd0da69a7`.
+`toluva-worker:queue-v5-66ba37b`, built from the governed multi-segment,
+timing-approval, bounded tempo-fit, public-admission, and provider-budget
+source revision. Its verified production image ID is
+`sha256:3d8e9e0b4b9d2f447906bbb323597deb2c9d9099311b36f360f8a61725fc79df`.
 Its container health, restart count, and heartbeat must be recorded
 in `deploy/vps/README.md` after each deployment. No reverse proxy, DNS record,
 forwarded port, or public worker endpoint is required.

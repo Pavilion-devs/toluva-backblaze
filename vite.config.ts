@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import vinext from "vinext";
 import { defineConfig } from "vite";
 import hostingConfig from "./.openai/hosting.json";
@@ -43,11 +44,38 @@ export default defineConfig(async () => {
   // Wrangler snapshots its log path while the Cloudflare plugin is imported.
   const { cloudflare } = await import("@cloudflare/vite-plugin");
 
+  // MDX is registered here rather than left to vinext's auto-injection, which
+  // supplies no `providerImportSource` and so never applies our component map.
+  // vinext detects a user-registered MDX plugin and skips its own.
+  //
+  // The provider is our own module, not `@mdx-js/react`: that package builds on
+  // `createContext`, which does not exist in the RSC runtime and crashes the
+  // server bundle on import. MDX only needs the module to export
+  // `useMDXComponents`, so a plain function works in both environments.
+  const mdx = (await import("@mdx-js/rollup")).default;
+  const remarkGfm = (await import("remark-gfm")).default;
+  const rehypeSlug = (await import("rehype-slug")).default;
+  const remarkCodeMeta = (await import("./build/remark-code-meta.mjs")).default;
+
+  const mdxComponents = fileURLToPath(
+    new URL("./app/(docs)/_components/mdx-components.tsx", import.meta.url),
+  );
+
   return {
+    resolve: { alias: { "#mdx-components": mdxComponents } },
     server: isCodexSeatbeltSandbox
       ? { watch: { useFsEvents: false, usePolling: true } }
       : undefined,
     plugins: [
+      {
+        enforce: "pre" as const,
+        ...mdx({
+          providerImportSource: "#mdx-components",
+          remarkPlugins: [remarkGfm, remarkCodeMeta],
+          // Gives every heading an id, which is what the "On this page" rail reads.
+          rehypePlugins: [rehypeSlug],
+        }),
+      },
       vinext(),
       sites(),
       cloudflare({

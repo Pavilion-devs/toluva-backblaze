@@ -22,6 +22,10 @@ from toluva_pipeline.settings import Settings
 from toluva_pipeline.storage.b2 import build_b2_storage
 from toluva_pipeline.storage.keys import StorageScope, ToluvaObjectKeys
 from toluva_pipeline.storage.records import put_immutable
+from toluva_pipeline.storage.tempo_fit import (
+    ApprovedLocalTempoFit,
+    B2ApprovedLocalTempoFitStore,
+)
 
 QUEUE_PATTERN = re.compile(
     r"^projects/(?P<project>intake-[a-f0-9]{32})/"
@@ -34,9 +38,34 @@ REVISION_REQUEST_PATTERN = re.compile(
     r"(?P<segment>[A-Za-z0-9][A-Za-z0-9_-]{0,127})/"
     r"revision-requests/attempt-(?P<attempt>[1-9][0-9]*)\.json$"
 )
+APPROVED_REVISION_PATTERN = re.compile(
+    r"^(?P<prefix>projects/intake-[a-f0-9]{32}/"
+    r"jobs/localize-[a-f0-9]{32}/de-de/translations/)"
+    r"(?P<segment>[A-Za-z0-9][A-Za-z0-9_-]{0,127})/"
+    r"approved-revisions/attempt-(?P<attempt>[1-9][0-9]*)\.json$"
+)
+LOCAL_TEMPO_FIT_APPROVAL_PATTERN = re.compile(
+    r"^projects/intake-[a-f0-9]{32}/"
+    r"jobs/localize-[a-f0-9]{32}/de-de/qa/"
+    r"(?P<segment>[A-Za-z0-9][A-Za-z0-9_-]{0,127})/"
+    r"tempo-fit-approvals/attempt-(?P<attempt>[1-9][0-9]*)\.json$"
+)
+FAILED_STATUS_PATTERN = re.compile(
+    r"^projects/intake-[a-f0-9]{32}/jobs/localize-[a-f0-9]{32}/"
+    r"de-de/status/99-failed(?:-after-(?:transcript-review|"
+    r"[A-Za-z0-9][A-Za-z0-9_-]{0,127}-(?:tempo-fit-)?"
+    r"attempt-[1-9][0-9]*))?\.json$"
+)
+ADMISSION_PATTERN = re.compile(
+    r"^projects/system-runtime/intake-admissions/"
+    r"(?P<day>[0-9]{4}-[0-9]{2}-[0-9]{2})/"
+    r"slot-(?P<slot>[0-9]{3})\.json$"
+)
 JOB_VERSION = "live-v1"
 TARGET_LANGUAGE = "de-DE"
 PURPOSE = "internal-training"
+MAX_TTS_CALLS_PER_JOB = 4
+MAX_TTS_CHARACTERS_PER_JOB = 400
 
 STAGES: dict[str, tuple[int, str, str]] = {
     "claimed": (2, "running", "Claimed by the Python worker"),
@@ -64,12 +93,17 @@ def _json_bytes(payload: dict[str, object]) -> bytes:
 
 @dataclass(frozen=True)
 class QueuedJobRequest:
+    admission_day: str
+    admission_key: str
+    admission_slot: int
     authorization_id: str
     created_at: str
     development_sample: bool
     job_id: str
     project_id: str
     protected_terms: tuple[str, ...]
+    max_tts_calls: int
+    max_tts_characters: int
     purpose: str
     source_asset_id: str
     source_key: str
@@ -100,6 +134,14 @@ class QueuedJobRequest:
             raise ValueError("Queued engine version is unsupported")
         if payload.get("state") != "queued":
             raise ValueError("Queued job request is not in the queued state")
+        if payload.get("public_intake") is not True:
+            raise ValueError("Queued job request is outside public intake")
+        if payload.get("source_rights_confirmed") is not True:
+            raise ValueError("Queued source rights were not confirmed")
+        if payload.get("synthetic_voice_disclosure_acknowledged") is not True:
+            raise ValueError("Queued synthetic voice disclosure was not acknowledged")
+        if str(payload.get("authorization_id", "")) != "auth-stock-intake-v1":
+            raise ValueError("Queued authorization is unsupported")
         protected_terms = tuple(
             str(value) for value in payload.get("protected_terms", ())
         )
@@ -111,16 +153,43 @@ class QueuedJobRequest:
         source_size_bytes = int(payload.get("source_size_bytes", 0))
         if source_size_bytes < 1 or source_size_bytes > 12 * 1024 * 1024:
             raise ValueError("Queued source size is outside the intake limit")
+        provider_budget = payload.get("provider_budget")
+        if not isinstance(provider_budget, dict):
+            raise ValueError("Queued provider budget is missing")
+        max_tts_calls = int(provider_budget.get("max_tts_calls", 0))
+        max_tts_characters = int(
+            provider_budget.get("max_tts_characters", 0)
+        )
+        if not 1 <= max_tts_calls <= MAX_TTS_CALLS_PER_JOB:
+            raise ValueError("Queued TTS call budget is outside the safe limit")
+        if not 1 <= max_tts_characters <= MAX_TTS_CHARACTERS_PER_JOB:
+            raise ValueError("Queued TTS character budget is outside the safe limit")
+        admission_day = str(payload.get("admission_day", ""))
+        admission_key = str(payload.get("admission_key", ""))
+        admission_slot = int(payload.get("admission_slot", 0))
+        admission_match = ADMISSION_PATTERN.fullmatch(admission_key)
+        if (
+            admission_match is None
+            or admission_match.group("day") != admission_day
+            or int(admission_match.group("slot")) != admission_slot
+            or not 1 <= admission_slot <= 25
+        ):
+            raise ValueError("Queued public admission is invalid")
         expected_request_key = keys.queue_request(scope)
         if not QUEUE_PATTERN.fullmatch(expected_request_key):
             raise ValueError("Queued job handle is outside the intake namespace")
         return cls(
+            admission_day=admission_day,
+            admission_key=admission_key,
+            admission_slot=admission_slot,
             authorization_id=str(payload.get("authorization_id", "")),
             created_at=str(payload.get("created_at", "")),
             development_sample=bool(payload.get("development_sample", False)),
             job_id=job_id,
             project_id=project_id,
             protected_terms=protected_terms,
+            max_tts_calls=max_tts_calls,
+            max_tts_characters=max_tts_characters,
             purpose=PURPOSE,
             source_asset_id=source_asset_id,
             source_key=source_key,
@@ -129,6 +198,29 @@ class QueuedJobRequest:
             target_language=TARGET_LANGUAGE,
             version=JOB_VERSION,
         )
+
+
+def _validate_public_admission(
+    request: QueuedJobRequest,
+    payload: object,
+) -> None:
+    if not isinstance(payload, dict):
+        raise ValueError("Public intake admission must be a JSON object")
+    expected_budget = {
+        "max_tts_calls": request.max_tts_calls,
+        "max_tts_characters": request.max_tts_characters,
+    }
+    if (
+        payload.get("record_type") != "public_intake_admission"
+        or payload.get("schema_version") != "1.0"
+        or payload.get("state") != "reserved"
+        or payload.get("project_id") != request.project_id
+        or payload.get("job_id") != request.job_id
+        or payload.get("admission_day") != request.admission_day
+        or payload.get("admission_slot") != request.admission_slot
+        or payload.get("provider_budget") != expected_budget
+    ):
+        raise ValueError("Public intake admission does not match the queued job")
 
 
 class JobStatusWriter:
@@ -170,6 +262,53 @@ class JobStatusWriter:
                 key = key.removesuffix(".json") + (
                     f"-{match.group('segment')}-"
                     f"attempt-{match.group('attempt')}.json"
+                )
+        elif stage == "failed":
+            entries = _list_entries(
+                self._backend,
+                f"{self._scope.job_prefix}/",
+            )
+            approvals: list[tuple[FileEntry, str]] = [
+                (
+                    entry,
+                    f"{match.group('segment')}-attempt-{match.group('attempt')}",
+                )
+                for entry in entries
+                if (
+                    match := APPROVED_REVISION_PATTERN.fullmatch(entry.key)
+                )
+                is not None
+            ]
+            approvals.extend(
+                (
+                    entry,
+                    f"{match.group('segment')}-tempo-fit-attempt-"
+                    f"{match.group('attempt')}",
+                )
+                for entry in entries
+                if (
+                    match := LOCAL_TEMPO_FIT_APPROVAL_PATTERN.fullmatch(
+                        entry.key
+                    )
+                )
+                is not None
+            )
+            if approvals:
+                _, suffix = max(
+                    approvals,
+                    key=lambda item: (
+                        _utc(item[0].last_modified),
+                        item[0].key,
+                    ),
+                )
+                key = key.removesuffix(".json") + f"-after-{suffix}.json"
+            elif self._backend.exists(
+                self._keys.transcript_human_review(
+                    self._scope, JOB_VERSION
+                )
+            ):
+                key = key.removesuffix(".json") + (
+                    "-after-transcript-review.json"
                 )
         if self._backend.exists(key):
             return
@@ -255,6 +394,35 @@ def _revision_approval_key(request_key: str) -> str:
     )
 
 
+def _tempo_fit_approval_key_for_revision(request_key: str) -> str | None:
+    """Map retry N to a local-fit approval selecting existing attempt N-1."""
+
+    match = REVISION_REQUEST_PATTERN.fullmatch(request_key)
+    if match is None:
+        raise ValueError("translation revision request key is invalid")
+    retry_number = int(match.group("attempt"))
+    if retry_number <= 1:
+        return None
+    job_prefix = match.group("prefix").removesuffix("translations/")
+    return (
+        f"{job_prefix}qa/{match.group('segment')}/tempo-fit-approvals/"
+        f"attempt-{retry_number - 1}.json"
+    )
+
+
+def _revision_resume_key(
+    request_key: str,
+    entries_by_key: dict[str, FileEntry],
+) -> str | None:
+    revision_approval = _revision_approval_key(request_key)
+    if revision_approval in entries_by_key:
+        return revision_approval
+    tempo_fit_approval = _tempo_fit_approval_key_for_revision(request_key)
+    if tempo_fit_approval in entries_by_key:
+        return tempo_fit_approval
+    return None
+
+
 def process_queued_job(
     settings: Settings,
     *,
@@ -269,6 +437,10 @@ def process_queued_job(
         storage.backend,
         project_id=project_id,
         job_id=job_id,
+    )
+    _validate_public_admission(
+        request,
+        json.loads(storage.backend.get(request.admission_key)),
     )
     source_bytes = storage.backend.get(request.source_key)
     if len(source_bytes) != request.source_size_bytes:
@@ -291,7 +463,9 @@ def process_queued_job(
             protected_terms=request.protected_terms,
             create_development_source_if_missing=False,
             development_sample=request.development_sample,
-            source_kind="user-uploaded-engine-test",
+            source_kind="user-uploaded-public-intake",
+            max_tts_calls=request.max_tts_calls,
+            max_tts_characters=request.max_tts_characters,
             version=request.version,
             on_progress=status.emit,
         )
@@ -303,6 +477,43 @@ def process_queued_job(
             "The worker preserved every completed checkpoint and stopped before an unsafe replay.",
         )
         raise
+
+
+def approve_queued_job_local_tempo_fit(
+    settings: Settings,
+    *,
+    project_id: str,
+    job_id: str,
+    segment_id: str,
+    attempt_number: int,
+    approved_max_tempo_factor: float,
+    approved_by: str,
+    approved_at: datetime | None = None,
+) -> ApprovedLocalTempoFit:
+    """Write one no-provider-call approval bound to an exact queued attempt."""
+
+    scope = StorageScope(project_id, job_id, TARGET_LANGUAGE)
+    storage = build_b2_storage(settings, scope, preflight=True)
+    request, scope, keys = _load_request(
+        storage.backend,
+        project_id=project_id,
+        job_id=job_id,
+    )
+    _validate_public_admission(
+        request,
+        json.loads(storage.backend.get(request.admission_key)),
+    )
+    return B2ApprovedLocalTempoFitStore(
+        storage.backend,
+        keys=keys,
+        scope=scope,
+    ).approve(
+        segment_id=segment_id,
+        attempt_number=attempt_number,
+        approved_max_tempo_factor=approved_max_tempo_factor,
+        approved_by=approved_by,
+        approved_at=approved_at or datetime.now(UTC),
+    )
 
 
 def find_next_runnable_job(
@@ -338,20 +549,24 @@ def find_next_runnable_job(
             keys.status_event(scope, 14, "completed"),
             keys.status_event(scope, 13, "completed"),
             keys.status_event(scope, 12, "completed"),
-            keys.status_event(scope, 99, "failed"),
             keys.final_record(scope, JOB_VERSION),
         )
         if any(key in entries_by_key for key in terminal_keys):
             continue
-        blocked_key = keys.status_event(scope, 6, "transcript-blocked")
-        review_key = keys.transcript_human_review(scope, JOB_VERSION)
-        if blocked_key in entries_by_key and review_key not in entries_by_key:
-            continue
-        if blocked_key in entries_by_key and review_key in entries_by_key:
-            # The immutable human-review record is an explicit resume signal.
-            # It supersedes the old claim's freshness so the single worker can
-            # continue immediately without repeating transcription.
-            return project_id, job_id
+        failed_entries = tuple(
+            entry
+            for entry_key, entry in entries_by_key.items()
+            if entry_key.startswith(f"{scope.job_prefix}/status/")
+            and FAILED_STATUS_PATTERN.fullmatch(entry_key)
+        )
+        failed_entry = (
+            max(
+                failed_entries,
+                key=lambda entry: (_utc(entry.last_modified), entry.key),
+            )
+            if failed_entries
+            else None
+        )
         translation_prefix = f"{scope.job_prefix}/translations/"
         revision_request_keys = tuple(
             entry_key
@@ -361,15 +576,46 @@ def find_next_runnable_job(
         )
         if revision_request_keys:
             has_outstanding_revision = any(
-                _revision_approval_key(request_key) not in entries_by_key
+                _revision_resume_key(request_key, entries_by_key) is None
                 for request_key in revision_request_keys
             )
             if has_outstanding_revision:
                 continue
             # An immutable approved revision is an explicit same-job resume
             # signal. The worker reuses prior timing attempts and parent
-            # manifests instead of repeating an ElevenLabs call.
-            return project_id, job_id
+            # manifests instead of repeating an ElevenLabs call. If an older
+            # build left an immutable failure marker, only a later approval may
+            # supersede it; an old approval must never create a retry loop.
+            approval_entries = tuple(
+                entries_by_key[resume_key]
+                for request_key in revision_request_keys
+                if (
+                    resume_key := _revision_resume_key(
+                        request_key,
+                        entries_by_key,
+                    )
+                )
+                is not None
+            )
+            if failed_entry is None or max(
+                _utc(entry.last_modified) for entry in approval_entries
+            ) > _utc(failed_entry.last_modified):
+                return project_id, job_id
+        blocked_key = keys.status_event(scope, 6, "transcript-blocked")
+        review_key = keys.transcript_human_review(scope, JOB_VERSION)
+        if blocked_key in entries_by_key and review_key not in entries_by_key:
+            continue
+        if blocked_key in entries_by_key and review_key in entries_by_key:
+            # The immutable human-review record is an explicit resume signal.
+            # It may supersede an older failure, but never a newer one; that
+            # prevents an unchanged failed job from spinning forever.
+            review_entry = entries_by_key[review_key]
+            if failed_entry is None or _utc(
+                review_entry.last_modified
+            ) > _utc(failed_entry.last_modified):
+                return project_id, job_id
+        if failed_entry is not None:
+            continue
         claim_entry = entries_by_key.get(
             keys.status_event(scope, 2, "claimed")
         )

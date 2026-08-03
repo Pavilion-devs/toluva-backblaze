@@ -20,6 +20,7 @@ from toluva_pipeline.domain.timing import (
 class CorrectionStatus(StrEnum):
     ACCEPTED = "accepted"
     PADDED = "padded"
+    TEMPO_FIT = "tempo_fit"
     HUMAN_REVIEW = "human_review"
 
 

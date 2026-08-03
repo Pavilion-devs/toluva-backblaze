@@ -1,0 +1,99 @@
+export const metadata = {
+  title: "Installation & setup",
+  description:
+    "Node, Python and uv, FFmpeg, the B2 bucket key, and the isolated worker deployment.",
+};
+
+<Eyebrow>Getting started</Eyebrow>
+
+# Installation & setup
+
+<Lede>
+The web application and the generation worker are separate processes with
+separate requirements. You can run the interface without any credentials.
+</Lede>
+
+## Requirements
+
+- Node.js 22.13 or newer
+- Python 3.12
+- [`uv`](https://docs.astral.sh/uv/)
+- FFmpeg and FFprobe
+
+<Callout type="warning" title="Node version">
+The build fails on Node 18 with `node:fs/promises does not provide an export
+named 'glob'`. Check with `node -v` before anything else.
+</Callout>
+
+## The web application
+
+<CodeGroup>
+```bash title="Install"
+npm install
+```
+
+```bash title="Develop"
+npm run dev
+```
+
+```bash title="Verify"
+npm run lint
+npm run build
+npm test
+```
+</CodeGroup>
+
+The app works in stored-snapshot mode with no credentials at all. The topbar
+will read **Snapshot** instead of **Live B2**, and media served through the
+proxy will show its unavailable state — everything else renders.
+
+## Connecting Backblaze B2
+
+Copy the example environment file and provide a bucket-scoped key.
+
+```bash title="Shell"
+cp .env.example .env.local
+```
+
+<Callout type="danger" title="Never commit .env.local">
+Credentials stay server-side. No B2 key ever reaches browser code, and the
+media proxies accept fixed kinds or exact opaque job handles — never arbitrary
+B2 keys.
+</Callout>
+
+Use a least-privilege application key scoped to the single bucket. The
+application reads records through a server-only bridge.
+
+## The pipeline
+
+```bash title="Shell"
+UV_CACHE_DIR=.uv-cache uv sync --project services/pipeline
+services/pipeline/.venv/bin/python -m pytest services/pipeline
+```
+
+Ordinary automated tests mock external providers. Successful checkpoints are
+reused from B2, and page loads never regenerate media.
+
+See [`services/pipeline/README.md`](https://github.com/Pavilion-devs/toluva-backblaze/blob/main/services/pipeline/README.md)
+for pipeline commands.
+
+## The worker
+
+The generation worker runs as a single replica, isolated from the web
+application. Its deployment contract lives in
+[`deploy/vps/`](https://github.com/Pavilion-devs/toluva-backblaze/blob/main/deploy/vps/README.md).
+
+<Callout type="note" title="One replica, deliberately">
+A second replica could claim the same job and double-bill the speech provider.
+Admission slots and the job claim are what make spend predictable, so the
+replica count is part of the contract rather than a scaling knob.
+</Callout>
+
+## Environment flags
+
+| Flag | Effect |
+|---|---|
+| `TOLUVA_ENABLE_LIVE_INTAKE` | Opens or closes public job creation |
+| `TOLUVA_PUBLIC_DAILY_JOB_LIMIT` | Admission slots per UTC day, 1–25 |
+
+Enable live intake only after you have explicitly authorized provider spend.

@@ -201,6 +201,20 @@ class ToluvaObjectKeys:
             f"{_opaque_id(segment_id, 'segment_id')}/summary.json"
         )
 
+    def local_tempo_fit_approval(
+        self,
+        scope: StorageScope,
+        segment_id: str,
+        attempt_number: int,
+    ) -> str:
+        self._assert_scope(scope)
+        return (
+            f"{scope.job_prefix}/qa/"
+            f"{_opaque_id(segment_id, 'segment_id')}/"
+            "tempo-fit-approvals/"
+            f"attempt-{self._attempt(attempt_number)}.json"
+        )
+
     def transcript_quality(
         self,
         scope: StorageScope,

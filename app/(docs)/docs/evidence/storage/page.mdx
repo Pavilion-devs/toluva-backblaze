@@ -1,0 +1,81 @@
+export const metadata = {
+  title: "Backblaze B2 layout",
+  description:
+    "How a job is laid out in Backblaze B2 and why storage is the system of record.",
+};
+
+<Eyebrow>Evidence</Eyebrow>
+
+# Backblaze B2 layout
+
+<Lede>
+B2 is not where finished files are dropped at the end. It is where every stage
+reads from and writes to, which is what makes a run reconstructable after the
+fact.
+</Lede>
+
+## What is stored
+
+A single twelve-second run produces **60 job-scoped objects**:
+
+<CardGroup cols={3}>
+  <Card title="Inputs" icon="document">
+    Source master, the immutable job request, authorization evidence.
+  </Card>
+  <Card title="Intermediates" icon="layers">
+    Transcript, quality decisions, per-segment translations, every speech
+    attempt, captions.
+  </Card>
+  <Card title="Outputs" icon="database">
+    Localized audio, the final render, disclosure records, status events,
+    checkpoints, canonical manifests.
+  </Card>
+</CardGroup>
+
+## Why storage rather than a database
+
+Three properties fall out of it:
+
+1. **Resumability.** A worker that dies mid-run loses nothing. The next claim
+   reads the last checkpoint and continues.
+2. **Auditability.** Records are append-only. A superseded translation is
+   still there next to the one that replaced it.
+3. **Independence.** The evidence outlives the process that made it. Nothing
+   important lives only in a running service's memory.
+
+<Callout type="tip" title="This is why retries are cheap">
+Because completed attempts are already durable, an approved correction reuses
+every finished stage and only regenerates the segment that failed.
+</Callout>
+
+## How the application reads it
+
+The browser never talks to B2. Requests go through a server-only bridge, and
+the media proxies accept a fixed set of kinds or an exact opaque job handle.
+
+```text title="Allowed media kinds"
+source · final · captions · speech
+```
+
+<Callout type="danger" title="No arbitrary keys">
+There is no route that takes a B2 key from the client and fetches it.
+Attempting one — `/api/media?kind=../../private` — returns
+`unsupported_verified_media_kind` before any storage call is made.
+</Callout>
+
+## Hash verification
+
+The application re-checks stored media hashes before describing bytes as
+verified. A manifest asserting a hash is not treated as sufficient on its own;
+the object is hashed and compared.
+
+The example run's final MP4:
+
+```text title="SHA-256"
+369f3eea954c2bba91bd7a65cade78a86a9f9e1050cf915702e9a2da2e3917fe
+```
+
+## Browsing it
+
+The [B2 assets](/workspace/assets) page lists the highlighted objects for the
+example run with their kinds, sizes and full keys.

@@ -1,0 +1,140 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
+  <title id="title">Toluva system architecture</title>
+  <desc id="desc">A source video enters a durable Backblaze B2 job, a single worker runs transcription, translation, voice authorization, speech generation, timing QA, and composition as separate Genblaze stages, and the final video, captions, manifests, hashes, and decisions return to B2.</desc>
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="160%">
+      <feDropShadow dx="0" dy="12" stdDeviation="18" flood-color="#18231f" flood-opacity="0.12"/>
+    </filter>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="9" refY="6" orient="auto">
+      <path d="M1 1l9 5-9 5z" fill="#61716a"/>
+    </marker>
+    <style>
+      .sans { font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      .mono { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; }
+      .eyebrow { font-size: 17px; font-weight: 700; letter-spacing: 3px; }
+      .title { font-size: 44px; font-weight: 750; letter-spacing: -1.5px; }
+      .node-title { font-size: 20px; font-weight: 700; }
+      .node-copy { font-size: 15px; font-weight: 500; }
+      .mini { font-size: 13px; font-weight: 700; letter-spacing: 1px; }
+      .line { fill: none; stroke: #61716a; stroke-width: 3; marker-end: url(#arrow); }
+      .line-soft { fill: none; stroke: #9dafaa; stroke-width: 2; stroke-dasharray: 8 8; marker-end: url(#arrow); }
+    </style>
+  </defs>
+
+  <rect width="1600" height="900" rx="34" fill="#f4f1eb"/>
+  <circle cx="1490" cy="52" r="230" fill="#b8ddf5" opacity="0.32"/>
+  <circle cx="95" cy="855" r="220" fill="#16875d" opacity="0.08"/>
+
+  <g class="sans" fill="#171918">
+    <text x="78" y="82" class="eyebrow" fill="#16875d">TOLUVA SYSTEM MAP</text>
+    <text x="78" y="140" class="title">One governed run. Every decision preserved.</text>
+    <text x="78" y="180" font-size="19" fill="#52615b">The web queues work. The worker spends. Backblaze B2 keeps the record.</text>
+  </g>
+
+  <!-- Intake and durable queue -->
+  <g filter="url(#shadow)" class="sans">
+    <rect x="78" y="252" width="220" height="156" rx="24" fill="#171918"/>
+    <rect x="102" y="276" width="48" height="48" rx="12" fill="#b8ddf5"/>
+    <path d="M118 289v22l20-11z" fill="#171918"/>
+    <text x="102" y="352" class="node-title" fill="#fff">Source intake</text>
+    <text x="102" y="380" class="node-copy" fill="#b8c4bf">MP4 + rights + disclosure</text>
+
+    <rect x="354" y="252" width="230" height="156" rx="24" fill="#fff" stroke="#bfd3ca" stroke-width="2"/>
+    <rect x="378" y="276" width="48" height="48" rx="12" fill="#dcf1e8"/>
+    <path d="M390 289h24v22h-24zm0 7h24m-18-7v22" fill="none" stroke="#16875d" stroke-width="2.5"/>
+    <text x="378" y="352" class="node-title">B2 job request</text>
+    <text x="378" y="380" class="node-copy" fill="#63716c">Immutable queue commit</text>
+
+    <rect x="640" y="252" width="230" height="156" rx="24" fill="#fff" stroke="#bfd3ca" stroke-width="2"/>
+    <rect x="664" y="276" width="48" height="48" rx="12" fill="#e8f1f7"/>
+    <path d="M676 290h24v19h-24zm5-7v7m14-7v7m-14 19v8m14-8v8" fill="none" stroke="#2166a5" stroke-width="2.5" stroke-linecap="round"/>
+    <text x="664" y="352" class="node-title">Single worker</text>
+    <text x="664" y="380" class="node-copy" fill="#63716c">Claims, checkpoints, resumes</text>
+  </g>
+
+  <path class="line" d="M298 330h48"/>
+  <path class="line" d="M584 330h48"/>
+
+  <!-- Genblaze stage rail -->
+  <g class="sans">
+    <rect x="930" y="222" width="592" height="330" rx="28" fill="#171918"/>
+    <text x="966" y="263" class="eyebrow" fill="#b8ddf5">GENBLAZE STAGES</text>
+
+    <g fill="#fff">
+      <rect x="966" y="292" width="160" height="98" rx="18" fill="#252927" stroke="#3a4641"/>
+      <text x="986" y="325" class="mini" fill="#b8ddf5">01 · LOCAL</text>
+      <text x="986" y="356" class="node-title">Transcribe</text>
+      <text x="986" y="379" class="node-copy" fill="#aab6b0">Faster Whisper</text>
+
+      <rect x="1146" y="292" width="160" height="98" rx="18" fill="#252927" stroke="#3a4641"/>
+      <text x="1166" y="325" class="mini" fill="#b8ddf5">02 · LOCAL</text>
+      <text x="1166" y="356" class="node-title">Translate</text>
+      <text x="1166" y="379" class="node-copy" fill="#aab6b0">Argos en → de</text>
+
+      <rect x="1326" y="292" width="160" height="98" rx="18" fill="#183d30" stroke="#2d7256"/>
+      <text x="1346" y="325" class="mini" fill="#9be0c2">03 · CONTROL</text>
+      <text x="1346" y="356" class="node-title">Authorize</text>
+      <text x="1346" y="379" class="node-copy" fill="#b4d4c7">Voice policy gate</text>
+
+      <rect x="966" y="414" width="160" height="98" rx="18" fill="#252927" stroke="#3a4641"/>
+      <text x="986" y="447" class="mini" fill="#b8ddf5">04 · PROVIDER</text>
+      <text x="986" y="478" class="node-title">Generate</text>
+      <text x="986" y="501" class="node-copy" fill="#aab6b0">Stock synthetic voice</text>
+
+      <rect x="1146" y="414" width="160" height="98" rx="18" fill="#3a2926" stroke="#a9483d"/>
+      <text x="1166" y="447" class="mini" fill="#efaca4">05 · MEASURE</text>
+      <text x="1166" y="478" class="node-title">Timing QA</text>
+      <text x="1166" y="501" class="node-copy" fill="#d5bbb5">Fit, block, or approve</text>
+
+      <rect x="1326" y="414" width="160" height="98" rx="18" fill="#252927" stroke="#3a4641"/>
+      <text x="1346" y="447" class="mini" fill="#b8ddf5">06 · FAN-IN</text>
+      <text x="1346" y="478" class="node-title">Compose</text>
+      <text x="1346" y="501" class="node-copy" fill="#aab6b0">Video + audio + VTT</text>
+    </g>
+    <path d="M1126 341h12M1306 341h12M1406 390v16M1326 463h-12M1146 463h-12" class="line-soft"/>
+  </g>
+  <path class="line" d="M870 330h52"/>
+
+  <!-- Human approval loop -->
+  <g class="sans" filter="url(#shadow)">
+    <rect x="966" y="594" width="340" height="116" rx="22" fill="#fff" stroke="#e5b3ad" stroke-width="2"/>
+    <circle cx="1002" cy="630" r="15" fill="#cf483b"/>
+    <path d="M1002 621v12m0 7h.1" stroke="#fff" stroke-width="3" stroke-linecap="round"/>
+    <text x="1030" y="636" class="node-title">Hash-bound human approval</text>
+    <text x="994" y="674" class="node-copy" fill="#63716c">Exact revision, exact attempt, no blind retry.</text>
+  </g>
+  <path d="M1226 512v72" class="line-soft"/>
+  <path d="M966 652h-22q-24 0-24-24V487q0-24 24-24h14" class="line-soft"/>
+
+  <!-- B2 system of record -->
+  <g class="sans" filter="url(#shadow)">
+    <rect x="78" y="594" width="792" height="220" rx="30" fill="#dcedf8" stroke="#9fc9e4" stroke-width="2"/>
+    <rect x="110" y="626" width="104" height="150" rx="20" fill="#2166a5"/>
+    <ellipse cx="162" cy="652" rx="29" ry="11" fill="none" stroke="#fff" stroke-width="4"/>
+    <path d="M133 652v44c0 6 13 11 29 11s29-5 29-11v-44m-58 22c0 6 13 11 29 11s29-5 29-11" fill="none" stroke="#fff" stroke-width="4"/>
+    <text x="250" y="649" class="eyebrow" fill="#2166a5">BACKBLAZE B2 · SYSTEM OF RECORD</text>
+    <text x="250" y="696" class="node-title">Every stage writes before the next stage runs.</text>
+    <text x="250" y="731" class="node-copy" fill="#4a646f">Source · authorization · transcripts · translations · attempts · timing verdicts</text>
+    <text x="250" y="761" class="node-copy" fill="#4a646f">Captions · final media · Genblaze manifests · hashes · status events</text>
+  </g>
+  <path d="M469 408v176" class="line-soft"/>
+  <path d="M755 408v176" class="line-soft"/>
+  <path d="M966 520c-78 0-96 34-96 82" class="line-soft"/>
+
+  <!-- Outputs -->
+  <g class="sans" filter="url(#shadow)">
+    <rect x="1350" y="594" width="172" height="220" rx="26" fill="#fff" stroke="#bfd3ca" stroke-width="2"/>
+    <text x="1376" y="633" class="eyebrow" fill="#16875d">OUTPUT</text>
+    <rect x="1376" y="658" width="120" height="38" rx="10" fill="#dcf1e8"/>
+    <text x="1392" y="683" class="mini" fill="#16875d">GERMAN MP4</text>
+    <rect x="1376" y="706" width="120" height="38" rx="10" fill="#e8f1f7"/>
+    <text x="1392" y="731" class="mini" fill="#2166a5">WEBVTT</text>
+    <rect x="1376" y="754" width="120" height="38" rx="10" fill="#f1eee8"/>
+    <text x="1392" y="779" class="mini" fill="#52615b">EVIDENCE</text>
+  </g>
+  <path d="M1406 512v72" class="line"/>
+
+  <g class="mono" fill="#697872">
+    <text x="78" y="858" font-size="14">Browser credentials: none · Provider spend: worker only · Retry evidence: append-only</text>
+  </g>
+</svg>

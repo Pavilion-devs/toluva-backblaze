@@ -10,6 +10,8 @@ from toluva_pipeline.live_timing_correction import (
     GenblazeElevenLabsAttemptGenerator,
     LIVE_CORRECTED_TRANSLATION,
     LIVE_INITIAL_TRANSLATION,
+    ProviderSpendBudget,
+    ProviderSpendBudgetExceeded,
     run_live_timing_correction,
 )
 from toluva_pipeline.settings import Settings
@@ -53,6 +55,26 @@ def test_live_correction_fails_before_provider_without_b2() -> None:
 def test_live_correction_fixture_is_small_and_materially_shorter() -> None:
     assert len(LIVE_INITIAL_TRANSLATION) == 133
     assert len(LIVE_CORRECTED_TRANSLATION) == 54
+
+
+def test_provider_budget_is_idempotent_and_stops_before_overage() -> None:
+    budget = ProviderSpendBudget(max_calls=2, max_characters=10)
+    budget.reserve("attempt-1", "Toluva")
+    budget.reserve("attempt-1", "Toluva")
+    assert budget.consumed_calls == 1
+    assert budget.consumed_characters == 6
+
+    with pytest.raises(ProviderSpendBudgetExceeded, match="character"):
+        budget.reserve("attempt-2", "bleibt")
+    assert budget.consumed_calls == 1
+    assert budget.consumed_characters == 6
+
+
+def test_provider_budget_enforces_call_limit_independently() -> None:
+    budget = ProviderSpendBudget(max_calls=1, max_characters=400)
+    budget.reserve("attempt-1", "Toluva")
+    with pytest.raises(ProviderSpendBudgetExceeded, match="call"):
+        budget.reserve("attempt-2", "Toluva")
 
 
 def test_attempt_generator_rehydrates_verified_parent_lineage(

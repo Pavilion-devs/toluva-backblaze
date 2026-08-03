@@ -71,6 +71,10 @@ from toluva_pipeline.storage.keys import StorageScope, ToluvaObjectKeys
 from toluva_pipeline.storage.multi_segment import B2MultiSegmentJournal
 from toluva_pipeline.storage.records import put_immutable
 from toluva_pipeline.storage.stages import B2StageJournal
+from toluva_pipeline.storage.tempo_fit import (
+    ApprovedLocalTempoFit,
+    B2ApprovedLocalTempoFitStore,
+)
 from toluva_pipeline.storage.translation_revisions import (
     B2ApprovedTranslationRewriter,
     RewriteApprovalRequired,
@@ -89,7 +93,7 @@ E2E_AUTHORIZATION_ID = "auth-stock-live-v1"
 ARGOS_MODEL = "translate-en_de-1_3"
 WHISPER_MODEL = "whisper-base-en"
 WHISPER_MODEL_REVISION = "88b03866a4066bb4a97c12258abb82b1e9af0121"
-AUDIO_ASSEMBLY_POLICY_VERSION = "tempo-fit-v2"
+AUDIO_ASSEMBLY_POLICY_VERSION = "tempo-fit-v3"
 ProgressCallback = Callable[[str, str], None]
 
 
@@ -185,6 +189,7 @@ class LiveEndToEndReport:
     localized_audio_manifest_key: str | None = None
     red_to_green_segment_ids: tuple[str, ...] = ()
     resumed_segment_ids: tuple[str, ...] = ()
+    local_tempo_fit_approvals: tuple[dict[str, object], ...] = ()
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -583,29 +588,110 @@ def _reviewed_timed_transcript(
     transcript: TimedTranscript,
     corrected_text: str,
 ) -> TimedTranscript:
-    """Apply one approved sentence to each preserved provider time slot."""
+    """Bind approved sentences to the preserved provider timing evidence.
 
-    if len(transcript.segments) == 1:
-        replacements = (corrected_text.strip(),)
-    else:
-        replacements = tuple(
-            match.group(0).strip()
-            for match in re.finditer(
-                r"[^.!?]+(?:[.!?]+(?=\s|$)|$)",
-                corrected_text.strip(),
-            )
-            if match.group(0).strip()
+    Whisper segments are timing phrases, not sentence boundaries.  A human
+    correction may therefore contain fewer sentences than the provider emitted
+    slots even when it preserves the exact spoken wording.  Preserve the raw
+    provider segments in B2, but coalesce adjacent phrases into approved
+    sentence slots for translation and speech.  When a correction contains more
+    sentences than provider slots, distribute its words proportionally without
+    inventing new timing boundaries.
+    """
+
+    corrected_words = corrected_text.strip().split()
+    segment_count = len(transcript.segments)
+    approved_sentences = tuple(
+        match.group(0).strip()
+        for match in re.finditer(
+            r"[^.!?]+(?:[.!?]+(?=\s|$)|$)",
+            " ".join(corrected_words),
         )
-        if len(replacements) != len(transcript.segments):
-            raise EndToEndIntegrityError(
-                "A multi-segment transcript correction must preserve one "
-                "sentence per timed source segment"
+        if match.group(0).strip()
+    )
+    if not approved_sentences:
+        raise EndToEndIntegrityError(
+            "The reviewed transcript did not contain an approved sentence"
+        )
+    source_word_counts = tuple(
+        max(1, len(segment.text.split()))
+        for segment in transcript.segments
+    )
+
+    if len(approved_sentences) <= segment_count:
+        source_word_total = sum(source_word_counts)
+        approved_word_counts = tuple(
+            len(sentence.split()) for sentence in approved_sentences
+        )
+        approved_word_total = sum(approved_word_counts)
+        boundaries: list[int] = [0]
+        cumulative_approved_words = 0
+        for sentence_index, sentence_words in enumerate(
+            approved_word_counts[:-1]
+        ):
+            cumulative_approved_words += sentence_words
+            target_fraction = (
+                cumulative_approved_words / approved_word_total
             )
-    return TimedTranscript(
-        language=transcript.language,
-        source=transcript.source,
-        source_asset_sha256=transcript.source_asset_sha256,
-        segments=tuple(
+            remaining_sentences = len(approved_sentences) - sentence_index - 1
+            first_boundary = boundaries[-1] + 1
+            last_boundary = segment_count - remaining_sentences
+            boundary = min(
+                range(first_boundary, last_boundary + 1),
+                key=lambda candidate: abs(
+                    sum(source_word_counts[:candidate]) / source_word_total
+                    - target_fraction
+                ),
+            )
+            boundaries.append(boundary)
+        boundaries.append(segment_count)
+
+        reviewed_segments: list[TimedSegment] = []
+        for sentence, start, end in zip(
+            approved_sentences,
+            boundaries[:-1],
+            boundaries[1:],
+            strict=True,
+        ):
+            source_group = transcript.segments[start:end]
+            speaker_ids = {segment.speaker_id for segment in source_group}
+            if len(speaker_ids) != 1:
+                raise EndToEndIntegrityError(
+                    "A reviewed sentence cannot merge multiple speakers"
+                )
+            reviewed_segments.append(
+                TimedSegment(
+                    segment_id=source_group[0].segment_id,
+                    start_seconds=source_group[0].start_seconds,
+                    end_seconds=source_group[-1].end_seconds,
+                    text=sentence,
+                    speaker_id=source_group[0].speaker_id,
+                )
+            )
+    else:
+        cursor = 0
+        cumulative_source_words = 0
+        replacement_parts: list[str] = []
+        source_word_total = sum(source_word_counts)
+        for index, source_word_count in enumerate(source_word_counts[:-1]):
+            cumulative_source_words += source_word_count
+            proportional_cut = round(
+                len(corrected_words)
+                * cumulative_source_words
+                / source_word_total
+            )
+            remaining_segments = segment_count - index - 1
+            cut = max(
+                cursor + 1,
+                min(
+                    proportional_cut,
+                    len(corrected_words) - remaining_segments,
+                ),
+            )
+            replacement_parts.append(" ".join(corrected_words[cursor:cut]))
+            cursor = cut
+        replacement_parts.append(" ".join(corrected_words[cursor:]))
+        reviewed_segments = [
             TimedSegment(
                 segment_id=segment.segment_id,
                 start_seconds=segment.start_seconds,
@@ -615,10 +701,22 @@ def _reviewed_timed_transcript(
             )
             for segment, replacement in zip(
                 transcript.segments,
-                replacements,
+                replacement_parts,
                 strict=True,
             )
-        ),
+        ]
+
+    if " ".join(segment.text for segment in reviewed_segments) != " ".join(
+        corrected_words
+    ):
+        raise EndToEndIntegrityError(
+            "The reviewed transcript could not be bound to its timed slots"
+        )
+    return TimedTranscript(
+        language=transcript.language,
+        source=transcript.source,
+        source_asset_sha256=transcript.source_asset_sha256,
+        segments=tuple(reviewed_segments),
     )
 
 
@@ -665,6 +763,8 @@ def run_live_end_to_end(
     create_development_source_if_missing: bool = True,
     development_sample: bool = True,
     source_kind: str = "locally-generated-development-sample",
+    max_tts_calls: int | None = None,
+    max_tts_characters: int | None = None,
     version: str = E2E_VERSION,
     on_progress: ProgressCallback | None = None,
 ) -> LiveEndToEndReport:
@@ -1110,23 +1210,49 @@ def run_live_end_to_end(
             language=E2E_LANGUAGE,
             language_code="de",
             purpose="internal-training",
+            max_tts_calls=max_tts_calls,
+            max_tts_characters=max_tts_characters,
         )
         completed_timings: dict[str, TimingCorrectionOutcome] = {}
         prior_attempts: dict[str, tuple[CorrectionAttempt, ...]] = {}
+        local_tempo_fits: dict[str, ApprovedLocalTempoFit] = {}
+        tempo_fit_store = B2ApprovedLocalTempoFitStore(
+            storage.backend,
+            keys=keys,
+            scope=scope,
+        )
         for segment in timed_transcript.segments:
             completed = correction_journal.completed_outcome(
                 segment.segment_id
             )
+            durable_attempts = (
+                completed.attempts
+                if completed is not None
+                else correction_journal.completed_attempts(
+                    segment.segment_id,
+                    max_attempts=settings.max_timing_retries + 1,
+                )
+            )
+            for attempt in durable_attempts:
+                generator.restore_attempt(attempt)
+            tempo_fit = tempo_fit_store.load(
+                segment_id=segment.segment_id,
+                attempts=durable_attempts,
+            )
+            if tempo_fit is not None:
+                if completed is not None and completed != tempo_fit.outcome:
+                    raise EndToEndIntegrityError(
+                        "Stored timing summary conflicts with local-fit approval"
+                    )
+                if completed is None:
+                    correction_journal.correction_completed(tempo_fit.outcome)
+                completed_timings[segment.segment_id] = tempo_fit.outcome
+                local_tempo_fits[segment.segment_id] = tempo_fit
+                continue
             if completed is not None:
                 completed_timings[segment.segment_id] = completed
                 continue
-            durable_attempts = correction_journal.completed_attempts(
-                segment.segment_id,
-                max_attempts=settings.max_timing_retries + 1,
-            )
             prior_attempts[segment.segment_id] = durable_attempts
-            for attempt in durable_attempts:
-                generator.restore_parent(attempt.speech)
 
         progress(
             "translating",
@@ -1194,7 +1320,11 @@ def run_live_end_to_end(
         )
         progress(
             "timing-qa",
-            "Measured every segment and selected the bounded timing action.",
+            (
+                "Measured every segment and applied the approved local tempo fit."
+                if local_tempo_fits
+                else "Measured every segment and selected the bounded timing action."
+            ),
         )
 
         localized_transcript = multi_outcome.to_localized_transcript(
@@ -1250,6 +1380,18 @@ def run_live_end_to_end(
                     f"{AUDIO_ASSEMBLY_POLICY_VERSION}\0"
                     + "\0".join(
                         asset.sha256 or "" for asset in segment_audio_assets
+                    )
+                    + "\0"
+                    + "\0".join(
+                        (
+                            f"{segment_id}:"
+                            f"{approval.tempo_factor:.12f}:"
+                            f"{approval.approved_max_tempo_factor:.6f}:"
+                            f"{approval.approval_key}"
+                        )
+                        for segment_id, approval in sorted(
+                            local_tempo_fits.items()
+                        )
                     )
                 ).encode()
             )
@@ -1308,6 +1450,18 @@ def run_live_end_to_end(
                                 ),
                                 "end_seconds": (
                                     result.source_segment.end_seconds
+                                ),
+                                **(
+                                    {
+                                        "approved_max_tempo_factor": (
+                                            local_tempo_fits[
+                                                result.source_segment.segment_id
+                                            ].approved_max_tempo_factor
+                                        )
+                                    }
+                                    if result.source_segment.segment_id
+                                    in local_tempo_fits
+                                    else {}
                                 ),
                             }
                             for result in multi_outcome.segment_results
@@ -1514,6 +1668,10 @@ def run_live_end_to_end(
             "segment_count": len(multi_outcome.segment_results),
             "human_approval_required_before_publish": True,
             "development_sample": development_sample,
+            "local_tempo_fit_approvals": [
+                item.evidence_dict()
+                for item in local_tempo_fits.values()
+            ],
         }
         put_immutable(
             storage.backend,
@@ -1538,7 +1696,9 @@ def run_live_end_to_end(
             (attempt.timing_band for attempt in selected_attempts),
             key=lambda value: band_rank.get(value, 99),
         )
-        if multi_outcome.red_to_green_segment_ids:
+        if local_tempo_fits:
+            aggregate_action = "approved_local_tempo_fit"
+        elif multi_outcome.red_to_green_segment_ids:
             aggregate_action = "bounded_rewrite_regeneration"
         elif any(
             attempt.timing_action == "pad_silence"
@@ -1637,6 +1797,10 @@ def run_live_end_to_end(
                 multi_outcome.red_to_green_segment_ids
             ),
             resumed_segment_ids=multi_outcome.resumed_segment_ids,
+            local_tempo_fit_approvals=tuple(
+                item.evidence_dict()
+                for item in local_tempo_fits.values()
+            ),
         )
         put_immutable(
             storage.backend,

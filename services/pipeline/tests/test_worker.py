@@ -79,6 +79,12 @@ def queued_request(
     source_id = f"source-{'c' * 32}"
     backend.objects[keys.queue_request(scope)] = json.dumps(
         {
+            "admission_day": "2026-08-01",
+            "admission_key": (
+                "projects/system-runtime/intake-admissions/2026-08-01/"
+                "slot-001.json"
+            ),
+            "admission_slot": 1,
             "record_type": "localization_job_request",
             "project_id": scope.project_id,
             "job_id": scope.job_id,
@@ -90,6 +96,13 @@ def queued_request(
             "purpose": "internal-training",
             "authorization_id": "auth-stock-intake-v1",
             "protected_terms": ["Toluva"],
+            "provider_budget": {
+                "max_tts_calls": 4,
+                "max_tts_characters": 400,
+            },
+            "public_intake": True,
+            "source_rights_confirmed": True,
+            "synthetic_voice_disclosure_acknowledged": True,
             "development_sample": False,
             "version": "live-v1",
             "state": "queued",

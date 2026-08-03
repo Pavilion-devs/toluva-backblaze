@@ -151,6 +151,27 @@ def test_collision_check_accepts_only_bounded_tempo_fit() -> None:
         )
 
 
+def test_one_hash_approved_segment_can_use_the_109_local_cap() -> None:
+    local_placements = (
+        SegmentAudioPlacement("segment-001", 0.0, 1.0),
+        SegmentAudioPlacement(
+            "segment-002",
+            1.0,
+            2.0,
+            approved_max_tempo_factor=1.09,
+        ),
+    )
+    assert segment_audio_tempo_factors(
+        local_placements,
+        (0.9, 1.0888),
+    ) == pytest.approx((1.0, 1.0888))
+    with pytest.raises(ValueError, match="bounded tempo-fit"):
+        segment_audio_tempo_factors(
+            local_placements,
+            (0.9, 1.09001),
+        )
+
+
 def test_placement_end_allows_only_timestamp_rounding_tolerance() -> None:
     rounded_placements = (
         SegmentAudioPlacement("segment-001", 0.0, 1.0),

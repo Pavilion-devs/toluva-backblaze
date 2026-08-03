@@ -1,0 +1,77 @@
+export const metadata = {
+  title: "Voice authorization",
+  description:
+    "Voice authorization as an active generation control: scope, validity, and the evidence hash.",
+};
+
+<Eyebrow>Core concepts</Eyebrow>
+
+# Voice authorization
+
+<Lede>
+Authorization is a control that runs before generation, not metadata attached
+after it. If the request falls outside the record, no provider is contacted.
+</Lede>
+
+## What the record stores
+
+| Field | Purpose |
+|---|---|
+| Voice type | Stock, designed, or cloned |
+| Allowed languages | Which target languages this voice may speak |
+| Allowed purposes | Which uses are permitted |
+| Validity window | When the authorization expires |
+| Owner / approver | Who asserted it |
+| Evidence SHA-256 | Hash of the consent evidence itself |
+| Disclosure text | The synthetic-media disclosure carried with output |
+
+## What the gate evaluates
+
+Every generation request is checked against all of it: requested language,
+requested purpose, current date against the validity window, revocation state,
+and the stored evidence hash.
+
+<Callout type="tip" title="Try it">
+The [policy tester](/workspace/voice) runs the real evaluation against the
+stored record. German internal training is allowed; the other combinations are
+refused, and the refusal explains itself.
+</Callout>
+
+## What a refusal looks like
+
+A blocked request returns a decision code and a reason, and records
+`providerCalled: false`. That flag is the point — the boundary is not "we
+generated it and then hid it", it is "nothing was generated".
+
+```json title="Blocked decision"
+{
+  "allowed": false,
+  "code": "authorization_wrong_language",
+  "reason": "The stored authorization does not cover French.",
+  "providerCalled": false
+}
+```
+
+## Cloned voices
+
+The example project uses a **disclosed stock synthetic voice**, which needs no
+speaker consent record. A cloned voice is a different matter.
+
+<Callout type="danger" title="Cloning requires a consent record">
+For a cloned voice, a consent record must exist before generation — retaining
+the source file, the permission record, allowed uses and languages, the
+approver, the validity window, and the evidence SHA-256. Toluva blocks
+generation when that record is missing rather than proceeding on trust.
+</Callout>
+
+## Disclosure
+
+Applicable outputs carry a user-facing synthetic-media disclosure, and the
+disclosure state is stored in the run lineage alongside the provider, model,
+parameters, timestamps and output hashes.
+
+<Callout type="warning" title="What this does not establish">
+A manifest recording a disclosure proves the disclosure was recorded. It does
+not prove the underlying consent was validly obtained, and Toluva does not
+claim otherwise. See [Media & rights](/docs/reference/media-rights).
+</Callout>

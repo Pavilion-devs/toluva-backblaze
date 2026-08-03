@@ -1,0 +1,81 @@
+export const metadata = {
+  title: "Media & rights",
+  description:
+    "Synthetic-voice disclosure, source-rights confirmation, and the media ledger.",
+};
+
+<Eyebrow>Reference</Eyebrow>
+
+# Media & rights
+
+<Lede>
+Toluva separates engine evidence from publishable media so it does not imply
+rights or provenance it has not established.
+</Lede>
+
+## The example project's source
+
+The example project's immutable source uses the macOS Samantha system voice as
+clearly labelled development narration. It exists to exercise segmentation,
+translation, timing QA and composition — it is not entrant-owned voice media.
+
+<Callout type="danger" title="That audio is never served">
+Public requests for the source audio return `source_audio_withheld`. What is
+served instead is `judge-source-muted.mp4`, an H.264 video-only derivative
+with SHA-256 `a5c45de2…cc86fb7f`. The original master stays private B2
+evidence.
+</Callout>
+
+This is why the source preview in the workspace is silent and labelled
+**Audio withheld** rather than simply muted in the player.
+
+## Generated German media
+
+| Property | Value |
+|---|---|
+| Voice type | ElevenLabs platform stock synthetic voice |
+| Model | `eleven_flash_v2_5` |
+| Authorization record | `auth-stock-intake-v1` |
+| Permitted lane | German (`de-DE`), internal training |
+| Disclosure | Required, stored with the output |
+| Human approval | Required before publication |
+
+The app describes this as a disclosed stock synthetic voice — **not** a clone
+of the English development narrator. The distinction matters and the interface
+keeps it.
+
+## The timing-correction archive
+
+The two German timing-attempt audio objects were generated through ElevenLabs
+and Genblaze for Toluva. They are served only as evidence of the measured
+correction workflow, with their canonical manifest hashes, stored-byte hashes
+and parent/child relationship displayed alongside.
+
+## If you upload your own clip
+
+The source-rights confirmation is the mechanism, but it is an assertion by you
+rather than something Toluva can verify.
+
+<Callout type="warning" title="What you are asserting">
+That you hold the rights to the footage and any voice in it, and that creating
+a synthetic localized edition from it is permitted. Toluva records the
+assertion; it cannot check it.
+</Callout>
+
+If a run later uses a hero source featuring a real person or voice, retain the
+source file, the permission record, allowed uses and languages, the approver,
+the validity window, and the evidence SHA-256 before publishing it.
+
+## Third-party terms
+
+Source code is available under the MIT License. Media, model outputs, provider
+services and third-party dependencies remain subject to their own terms.
+
+<CardGroup cols={2}>
+  <Card title="Media and rights ledger" icon="document" href="https://github.com/Pavilion-devs/toluva-backblaze/blob/main/docs/MEDIA_AND_RIGHTS.md">
+    The full ledger this page summarises.
+  </Card>
+  <Card title="Third-party notices" icon="book" href="https://github.com/Pavilion-devs/toluva-backblaze/blob/main/THIRD_PARTY_NOTICES.md">
+    Dependency and provider attributions.
+  </Card>
+</CardGroup>

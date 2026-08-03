@@ -1,0 +1,83 @@
+export const metadata = {
+  title: "Intake contract & limits",
+  description:
+    "The intake contract: clip limits, required confirmations, and bounded public capacity.",
+};
+
+<Eyebrow>Reference</Eyebrow>
+
+# Intake contract & limits
+
+<Lede>
+Everything the intake lane enforces, and where each limit is checked.
+</Lede>
+
+## Clip limits
+
+| Constraint | Value | Checked |
+|---|---|---|
+| Container | MP4 (`video/mp4`) | Browser, then server |
+| Duration | 1–30 seconds | Browser via metadata, then server |
+| Size | ≤ 8 MB | Browser, then server |
+| Speakers | One English speaker | Transcript quality gate |
+| Protected term | Clip must say “Toluva” | Transcript quality gate |
+
+<Callout type="note" title="Browser checks are a courtesy">
+Duration and size are read locally so you get an answer immediately instead of
+after a failed upload. They are not the enforcement point — the server
+re-checks everything.
+</Callout>
+
+## Required confirmations
+
+Both are mandatory. The submit button stays disabled until both are ticked,
+and the server rejects a request that arrives without them.
+
+1. **Source rights** — you have the right to upload this clip and create a
+   localized edition from it.
+2. **Synthetic-voice disclosure** — you understand the German track uses a
+   disclosed ElevenLabs stock synthetic voice and needs human approval before
+   publishing.
+
+These travel with the job request as `sourceRightsConfirmed` and
+`syntheticVoiceDisclosureAcknowledged`.
+
+## Locked job contract
+
+Public intake does not let you choose these. They are fixed so the
+authorization record and the run always agree.
+
+| Field | Value |
+|---|---|
+| Target language | German · `de-DE` |
+| Purpose | Internal training |
+| Voice | Disclosed stock synthetic |
+| Protected term | `Toluva` |
+
+## Bounded public capacity
+
+| Bound | Value | Constant |
+|---|---|---|
+| Speech calls per job | 4 | `MAX_TTS_CALLS_PER_JOB` |
+| Generated characters per job | 400 | `MAX_TTS_CHARACTERS_PER_JOB` |
+| Admission slots per UTC day | 3 (configurable 1–25) | `TOLUVA_PUBLIC_DAILY_JOB_LIMIT` |
+
+The worker validates the exact admission slot before any provider call, so
+these hold regardless of what the interface does.
+
+## Error codes
+
+| Code | Status | Meaning |
+|---|---|---|
+| `source_file_required` | 400 | No file in the request |
+| `source_must_be_mp4` | 415 | Wrong container |
+| `source_size_out_of_range` | 413 | Over 8 MB |
+| `clip_duration_out_of_range` | 400 | Outside 1–30s |
+| `authorization_wrong_language` | 403 | Outside the authorization scope |
+| `authorization_wrong_purpose` | 403 | Outside the authorization scope |
+| `live_intake_unavailable` | 403 | Intake window is closed |
+
+<Callout type="warning" title="Failing closed">
+Every one of these refuses *before* a provider call and before B2 is mutated.
+A rejected intake costs nothing and leaves no partial state.
+</Callout>

@@ -1,0 +1,93 @@
+export const metadata = {
+  title: "How Toluva works",
+  description:
+    "Ingest, transcribe, translate, authorize, time-fit, master — the six stages end to end.",
+};
+
+<Eyebrow>Core concepts</Eyebrow>
+
+# How Toluva works
+
+<Lede>
+Six stages. Each one reads from storage, writes what it did, and hands off.
+Nothing is held only in memory, and nothing is overwritten.
+</Lede>
+
+## The six stages
+
+<Steps>
+  <Step title="Ingest">
+    The source clip and an immutable job request are written to B2. The request
+    carries the target language, the purpose, the client-reported duration, the
+    admission slot, and both required confirmations.
+  </Step>
+  <Step title="Transcribe">
+    Faster Whisper produces timed segments. Confidence and trailing-fragment
+    checks run here; a weak transcript blocks before translation rather than
+    after speech has been paid for.
+  </Step>
+  <Step title="Translate">
+    Argos Translate produces the target text per segment with protected terms
+    preserved. Translation records are written before and after each stage.
+  </Step>
+  <Step title="Authorize">
+    The requested language and purpose are evaluated against the stored
+    authorization record. This is the last point before spend.
+  </Step>
+  <Step title="Time-fit QA">
+    Speech is generated per segment, then measured. Drift decides whether the
+    segment is accepted, padded, tempo-fitted, or blocked for revision.
+  </Step>
+  <Step title="Master">
+    Source-timed audio fan-in, caption generation, and a three-input video
+    composition produce the final render.
+  </Step>
+</Steps>
+
+## Why the order matters
+
+The expensive call is speech generation. Every gate that can fail is placed
+before it:
+
+- A clip outside the duration or size limits never uploads.
+- A transcript below confidence blocks before translation.
+- A language or purpose outside the authorization scope is refused before the
+  provider is contacted.
+
+<Callout type="tip" title="Fail closed, fail early">
+Each of those refusals is itself recorded. A blocked run is not an absence of
+evidence — it is evidence that the boundary held.
+</Callout>
+
+## What is measured, not assumed
+
+Duration is read from the generated audio file, never estimated from character
+count. That distinction is the whole basis of timing QA: a translation that
+*looks* short can still overrun its slot, and only measurement catches it.
+
+Stored media hashes are re-checked before the application describes bytes as
+verified. A manifest that claims a hash is not sufficient on its own.
+
+## Failure behaviour
+
+| Failure | Behaviour |
+|---|---|
+| B2 read unavailable | The stored snapshot stays visible; the app says so |
+| Worker offline | Jobs queue durably; no provider is called |
+| Provider call fails | Recorded as a failed attempt, kept in the audit trail |
+| Segment outside band | Blocks and waits for an approved revision |
+| Job pointer expired | Cleared from the browser; the B2 record is unaffected |
+
+The interface is built to say what is actually true about the current state
+rather than to look healthy.
+
+## Next
+
+<CardGroup cols={2}>
+  <Card title="Voice authorization" icon="shield" href="/docs/authorization">
+    What the gate checks, and what happens when it refuses.
+  </Card>
+  <Card title="Timing-drift QA" icon="clock" href="/docs/timing">
+    Bands, padding, tempo fit, and the bounded retry.
+  </Card>
+</CardGroup>

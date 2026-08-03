@@ -1,13 +1,21 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist_Mono, Inter, Nunito } from "next/font/google";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const inter = Inter({
+  variable: "--font-inter",
   subsets: ["latin"],
 });
 
+// Headings across both the marketing page and the workspace.
+const nunito = Nunito({
+  variable: "--font-nunito",
+  subsets: ["latin"],
+  weight: ["600", "700", "800"],
+});
+
+// Reserved for hashes, job IDs, and timecodes.
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
@@ -35,7 +43,7 @@ export async function generateMetadata(): Promise<Metadata> {
     openGraph: {
       title: "Toluva — Governed video localization",
       description:
-        "A controlled 12.419-second proof: authorized voice, three time-fit segments, and nine verified manifests.",
+        "Upload one approved source video and get a time-aligned, consent-aware German edition with every stage recorded.",
       images: [
         {
           url: socialImage,
@@ -63,7 +71,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${geistSans.variable} ${geistMono.variable}`}>
+      <body
+        className={`${inter.variable} ${nunito.variable} ${geistMono.variable}`}
+      >
         {children}
       </body>
     </html>

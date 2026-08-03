@@ -1,6 +1,5 @@
 import { proxyB2Object } from "../../../lib/b2-server";
 import { verifiedMediaKey } from "../../../lib/verified-run-server";
-import { liveIntakeEnabled } from "../../../lib/runtime-mode";
 
 export const dynamic = "force-dynamic";
 
@@ -14,12 +13,12 @@ export async function GET(request: Request) {
       { status: 400 },
     );
   }
-  if (kind === "source" && !liveIntakeEnabled()) {
+  if (kind === "source") {
     return Response.json(
       {
         error: "source_audio_withheld",
         message:
-          "Public judge mode serves an audio-free source preview while preserving the immutable source master privately in B2.",
+          "The example project serves an audio-free source preview while preserving its immutable source master privately in B2.",
       },
       { headers: { "Cache-Control": "no-store" }, status: 403 },
     );

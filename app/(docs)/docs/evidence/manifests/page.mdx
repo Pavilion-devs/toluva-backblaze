@@ -1,0 +1,74 @@
+export const metadata = {
+  title: "Genblaze manifests",
+  description:
+    "Genblaze runs, canonical hashes, parent/child lineage, and what a manifest does not prove.",
+};
+
+<Eyebrow>Evidence</Eyebrow>
+
+# Genblaze manifests
+
+<Lede>
+Genblaze owns the visible generative-media orchestration. Every stage is a
+separate run carrying its own canonical manifest.
+</Lede>
+
+## Nine runs for one edition
+
+| # | Stage | Provider |
+|---|---|---|
+| 1 | Transcription | Faster Whisper |
+| 2–4 | Translation ×3 | Argos Translate |
+| 5–7 | Speech ×3 | ElevenLabs |
+| 8 | Localized-audio fan-in | FFmpeg |
+| 9 | Final composition | FFmpeg |
+
+Each manifest records the provider, the model, the inputs, the parameters,
+timestamps, output hashes, the approver, and the disclosure state.
+
+## Lineage
+
+A retry uses `Pipeline.from_result()`, so the child manifest carries the
+previous attempt's `parent_run_id`. That is what turns a set of independent
+runs into a traceable chain.
+
+```text title="Correction lineage"
+a9cc6c70-86ee-4e1c-8874-002c47c50c9a   attempt 1 · red    · +113.87%
+        └── 3e5cdd07-51e0-4784-90f0-f419b143f1c3
+                                       attempt 2 · green  ·  −5.90%
+```
+
+<Callout type="tip" title="Append-only, always">
+A retry never replaces its parent. Both manifests, both audio objects and both
+measurements stay in B2.
+</Callout>
+
+## Independent verification
+
+Toluva does not trust a manifest's own claims about bytes. Before the interface
+describes an object as verified it:
+
+1. Fetches the stored object
+2. Hashes it
+3. Compares that against the manifest's recorded hash
+
+Both `manifestVerified` and `storedAssetHashMatches` have to hold. The
+[Provenance](/workspace/provenance) page shows the result per run.
+
+## What a manifest proves
+
+It proves **recorded lineage** and **canonical integrity** — this run happened,
+with these inputs and parameters, and produced exactly these bytes.
+
+<Callout type="danger" title="And what it does not">
+A manifest does not prove that every fact supplied to it was true. It does not
+establish that consent was validly obtained, that the speaker agreed, or that
+the output is lawful in any jurisdiction. Describing a manifest as proof of
+consent or of compliance would be a misrepresentation, and Toluva's interface
+is written to avoid it.
+</Callout>
+
+## Feedback upstream
+
+The output-root issue found while building against the SDK is tracked upstream
+as [backblaze-labs/genblaze#247](https://github.com/backblaze-labs/genblaze/issues/247).

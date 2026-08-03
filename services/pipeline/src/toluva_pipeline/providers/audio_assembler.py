@@ -30,6 +30,7 @@ from toluva_pipeline.media import probe_duration
 
 
 DEFAULT_MAX_TEMPO_FACTOR = 1.08
+MAX_APPROVED_LOCAL_TEMPO_FACTOR = 1.09
 
 
 def _local_audio_path(asset: Asset) -> Path:
@@ -53,6 +54,7 @@ class SegmentAudioPlacement:
     segment_id: str
     start_seconds: float
     end_seconds: float
+    approved_max_tempo_factor: float | None = None
 
     def __post_init__(self) -> None:
         if not self.segment_id.strip():
@@ -66,6 +68,26 @@ class SegmentAudioPlacement:
             raise ValueError("segment placement start must be non-negative")
         if self.end_seconds <= self.start_seconds:
             raise ValueError("segment placement end must be greater than start")
+        if self.approved_max_tempo_factor is not None and (
+            not math.isfinite(self.approved_max_tempo_factor)
+            or self.approved_max_tempo_factor < 1
+            or self.approved_max_tempo_factor
+            > MAX_APPROVED_LOCAL_TEMPO_FACTOR + 1e-9
+        ):
+            raise ValueError(
+                "approved max tempo factor must be within the local safety cap"
+            )
+
+
+def _placement_tempo_cap(
+    placement: SegmentAudioPlacement,
+    default_max_tempo_factor: float,
+) -> float:
+    return (
+        placement.approved_max_tempo_factor
+        if placement.approved_max_tempo_factor is not None
+        else default_max_tempo_factor
+    )
 
 
 def validate_segment_audio_placements(
@@ -108,7 +130,11 @@ def validate_segment_audio_placements(
             raise ValueError("audio durations must be positive and finite")
         slot_seconds = placement.end_seconds - placement.start_seconds
         tempo_factor = max(1.0, duration / slot_seconds)
-        if tempo_factor > max_tempo_factor + 1e-9:
+        placement_cap = _placement_tempo_cap(
+            placement,
+            max_tempo_factor,
+        )
+        if tempo_factor > placement_cap + 1e-9:
             raise ValueError(
                 f"localized speech for {placement.segment_id} collides with "
                 "the next segment"
@@ -146,7 +172,11 @@ def segment_audio_tempo_factors(
             raise ValueError("audio durations must be positive and finite")
         slot_seconds = placement.end_seconds - placement.start_seconds
         factor = max(1.0, duration / slot_seconds)
-        if factor > max_tempo_factor + 1e-9:
+        placement_cap = _placement_tempo_cap(
+            placement,
+            max_tempo_factor,
+        )
+        if factor > placement_cap + 1e-9:
             raise ValueError(
                 f"localized speech for {placement.segment_id} exceeds the "
                 "bounded tempo-fit limit"
@@ -288,6 +318,11 @@ class ToluvaSegmentAudioAssembler(SyncProvider):
                     segment_id=str(item["segment_id"]),
                     start_seconds=float(item["start_seconds"]),
                     end_seconds=float(item["end_seconds"]),
+                    approved_max_tempo_factor=(
+                        float(item["approved_max_tempo_factor"])
+                        if item.get("approved_max_tempo_factor") is not None
+                        else None
+                    ),
                 )
                 for item in raw_placements
                 if isinstance(item, dict)
@@ -400,6 +435,13 @@ class ToluvaSegmentAudioAssembler(SyncProvider):
                     "silence_policy": "preserve-source-gaps",
                     "tempo_policy": "bounded-speed-up-no-slowdown",
                     "max_tempo_factor": self._max_tempo_factor,
+                    "approved_max_tempo_factors": {
+                        placement.segment_id: (
+                            placement.approved_max_tempo_factor
+                        )
+                        for placement in placements
+                        if placement.approved_max_tempo_factor is not None
+                    },
                     "tempo_factors": {
                         placement.segment_id: factor
                         for placement, factor in zip(

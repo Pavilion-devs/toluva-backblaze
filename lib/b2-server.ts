@@ -275,9 +275,21 @@ export async function listB2ProjectFiles(
   return listFiles(safeProjectObjectKey(prefix));
 }
 
-async function listFiles(safePrefix: string): Promise<B2File[]> {
+export async function listB2ProjectFilesStrict(
+  prefix: string,
+): Promise<B2File[]> {
+  return listFiles(safeProjectObjectKey(prefix), true);
+}
+
+async function listFiles(
+  safePrefix: string,
+  failClosed = false,
+): Promise<B2File[]> {
   const context = await authorizeB2();
-  if (!context.capabilities.includes("listFiles")) return [];
+  if (!context.capabilities.includes("listFiles")) {
+    if (failClosed) throw new Error("b2_list_capability_missing");
+    return [];
+  }
 
   const response = await fetch(
     `${context.apiUrl}/b2api/v4/b2_list_file_names`,
@@ -295,9 +307,18 @@ async function listFiles(safePrefix: string): Promise<B2File[]> {
       method: "POST",
     },
   );
-  if (!response.ok) return [];
+  if (!response.ok) {
+    if (failClosed) {
+      throw new Error(`b2_list_files_failed_${response.status}`);
+    }
+    return [];
+  }
   const payload = (await response.json()) as { files?: B2File[] };
-  return Array.isArray(payload.files) ? payload.files : [];
+  if (!Array.isArray(payload.files)) {
+    if (failClosed) throw new Error("b2_list_files_invalid");
+    return [];
+  }
+  return payload.files;
 }
 
 function digestHex(buffer: ArrayBuffer): string {

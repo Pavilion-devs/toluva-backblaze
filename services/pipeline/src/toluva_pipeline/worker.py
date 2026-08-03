@@ -29,7 +29,7 @@ from toluva_pipeline.storage.keys import StorageScope
 WORKER_HEARTBEAT_KEY = (
     "projects/system-runtime/workers/primary/heartbeat.json"
 )
-WORKER_ENGINE_VERSION = "queue-v4"
+WORKER_ENGINE_VERSION = "queue-v5"
 MIN_WORKER_POLL_SECONDS = 60
 MIN_WORKER_HEARTBEAT_SECONDS = 60
 EXPECTED_WHISPER_SHA256 = (

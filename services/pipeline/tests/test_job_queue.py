@@ -7,6 +7,7 @@ import pytest
 from toluva_pipeline.job_queue import (
     JobStatusWriter,
     QueuedJobRequest,
+    _validate_public_admission,
     find_next_runnable_job,
 )
 from toluva_pipeline.storage.keys import StorageScope, ToluvaObjectKeys
@@ -15,6 +16,7 @@ from toluva_pipeline.storage.keys import StorageScope, ToluvaObjectKeys
 class MemoryBackend:
     def __init__(self) -> None:
         self.objects: dict[str, bytes] = {}
+        self.modified: dict[str, datetime] = {}
         self.exists_calls = 0
         self.get_calls = 0
         self.list_calls = 0
@@ -42,7 +44,10 @@ class MemoryBackend:
         entries = tuple(
             SimpleNamespace(
                 key=key,
-                last_modified=datetime(2026, 7, 29, 12, 0, tzinfo=UTC),
+                last_modified=self.modified.get(
+                    key,
+                    datetime(2026, 7, 29, 12, 0, tzinfo=UTC),
+                ),
             )
             for key in self.objects
             if key.startswith(prefix)
@@ -55,6 +60,12 @@ def request_payload() -> dict[str, object]:
     job_id = f"localize-{'b' * 32}"
     source_id = f"source-{'c' * 32}"
     return {
+        "admission_day": "2026-08-01",
+        "admission_key": (
+            "projects/system-runtime/intake-admissions/2026-08-01/"
+            "slot-001.json"
+        ),
+        "admission_slot": 1,
         "schema_version": "1.0",
         "record_type": "localization_job_request",
         "project_id": project_id,
@@ -69,6 +80,13 @@ def request_payload() -> dict[str, object]:
         "purpose": "internal-training",
         "authorization_id": "auth-stock-intake-v1",
         "protected_terms": ["Toluva"],
+        "provider_budget": {
+            "max_tts_calls": 4,
+            "max_tts_characters": 400,
+        },
+        "public_intake": True,
+        "source_rights_confirmed": True,
+        "synthetic_voice_disclosure_acknowledged": True,
         "development_sample": False,
         "version": "live-v1",
         "state": "queued",
@@ -89,6 +107,8 @@ def test_queue_request_accepts_only_the_exact_governed_contract() -> None:
         ("target_language", "fr-FR"),
         ("purpose", "public-marketing"),
         ("protected_terms", []),
+        ("source_rights_confirmed", False),
+        ("synthetic_voice_disclosure_acknowledged", False),
         ("source_sha256", "invalid"),
     ],
 )
@@ -100,6 +120,28 @@ def test_queue_request_rejects_contract_changes(
     payload[field] = value
     with pytest.raises(ValueError):
         QueuedJobRequest.from_payload(payload)
+
+
+def test_public_admission_must_match_the_exact_job_and_budget() -> None:
+    request = QueuedJobRequest.from_payload(request_payload())
+    admission = {
+        "schema_version": "1.0",
+        "record_type": "public_intake_admission",
+        "state": "reserved",
+        "project_id": request.project_id,
+        "job_id": request.job_id,
+        "admission_day": request.admission_day,
+        "admission_slot": request.admission_slot,
+        "provider_budget": {
+            "max_tts_calls": request.max_tts_calls,
+            "max_tts_characters": request.max_tts_characters,
+        },
+    }
+
+    _validate_public_admission(request, admission)
+    admission["job_id"] = f"localize-{'f' * 32}"
+    with pytest.raises(ValueError, match="does not match"):
+        _validate_public_admission(request, admission)
 
 
 def test_status_writer_is_append_only_and_idempotent() -> None:
@@ -294,7 +336,6 @@ def test_blocked_transcript_resumes_only_after_human_review() -> None:
         stale_claim_seconds=90,
     ) == (scope.project_id, scope.job_id)
 
-
 def test_blocked_timing_resumes_only_after_approved_revision() -> None:
     backend = MemoryBackend()
     payload = request_payload()
@@ -349,6 +390,170 @@ def test_blocked_timing_resumes_only_after_approved_revision() -> None:
         now=datetime(2026, 7, 29, 12, 0, tzinfo=UTC),
         stale_claim_seconds=90,
     ) == (scope.project_id, scope.job_id)
+
+
+def test_later_timing_approval_supersedes_an_older_failure_once() -> None:
+    backend = MemoryBackend()
+    payload = request_payload()
+    scope = StorageScope(
+        str(payload["project_id"]),
+        str(payload["job_id"]),
+        "de-DE",
+    )
+    keys = ToluvaObjectKeys(scope.project_id)
+    request_key = keys.translation_revision_request(
+        scope, "segment-001", 2
+    )
+    approval_key = keys.translation_approved_revision(
+        scope, "segment-001", 2
+    )
+    failure_key = keys.status_event(scope, 99, "failed")
+    backend.objects[keys.queue_request(scope)] = json.dumps(payload).encode()
+    backend.objects[keys.status_event(scope, 6, "transcript-blocked")] = b"{}"
+    backend.objects[keys.transcript_human_review(scope, "live-v1")] = b"{}"
+    backend.objects[failure_key] = b"{}"
+    backend.objects[request_key] = b"{}"
+    backend.modified[failure_key] = datetime(
+        2026, 7, 29, 12, 1, tzinfo=UTC
+    )
+    backend.modified[request_key] = datetime(
+        2026, 7, 29, 12, 2, tzinfo=UTC
+    )
+
+    assert (
+        find_next_runnable_job(
+            backend,  # type: ignore[arg-type]
+            now=datetime(2026, 7, 29, 12, 3, tzinfo=UTC),
+            stale_claim_seconds=90,
+        )
+        is None
+    )
+
+    backend.objects[approval_key] = b"{}"
+    backend.modified[approval_key] = datetime(
+        2026, 7, 29, 12, 4, tzinfo=UTC
+    )
+    assert find_next_runnable_job(
+        backend,  # type: ignore[arg-type]
+        now=datetime(2026, 7, 29, 12, 5, tzinfo=UTC),
+        stale_claim_seconds=90,
+    ) == (scope.project_id, scope.job_id)
+
+    resumed_failure_key = keys.status_event(
+        scope, 99, "failed"
+    ).removesuffix(".json") + "-after-segment-001-attempt-2.json"
+    backend.objects[resumed_failure_key] = b"{}"
+    backend.modified[resumed_failure_key] = datetime(
+        2026, 7, 29, 12, 5, tzinfo=UTC
+    )
+    assert (
+        find_next_runnable_job(
+            backend,  # type: ignore[arg-type]
+            now=datetime(2026, 7, 29, 12, 6, tzinfo=UTC),
+            stale_claim_seconds=90,
+        )
+        is None
+    )
+
+
+def test_hash_bound_local_fit_supersedes_retry_without_approving_it() -> None:
+    backend = MemoryBackend()
+    payload = request_payload()
+    scope = StorageScope(
+        str(payload["project_id"]),
+        str(payload["job_id"]),
+        "de-DE",
+    )
+    keys = ToluvaObjectKeys(scope.project_id)
+    backend.objects[keys.queue_request(scope)] = json.dumps(payload).encode()
+    backend.objects[
+        keys.translation_revision_request(scope, "segment-002", 2)
+    ] = b"{}"
+    backend.objects[
+        keys.translation_approved_revision(scope, "segment-002", 2)
+    ] = b"{}"
+    retry_three = keys.translation_revision_request(
+        scope,
+        "segment-002",
+        3,
+    )
+    backend.objects[retry_three] = b"{}"
+
+    assert (
+        find_next_runnable_job(
+            backend,  # type: ignore[arg-type]
+            now=datetime(2026, 8, 2, 12, 0, tzinfo=UTC),
+            stale_claim_seconds=90,
+        )
+        is None
+    )
+
+    local_fit_key = keys.local_tempo_fit_approval(
+        scope,
+        "segment-002",
+        2,
+    )
+    backend.objects[local_fit_key] = b"{}"
+    assert keys.translation_approved_revision(
+        scope,
+        "segment-002",
+        3,
+    ) not in backend.objects
+    assert find_next_runnable_job(
+        backend,  # type: ignore[arg-type]
+        now=datetime(2026, 8, 2, 12, 1, tzinfo=UTC),
+        stale_claim_seconds=90,
+    ) == (scope.project_id, scope.job_id)
+
+    failure_key = (
+        keys.status_event(scope, 99, "failed").removesuffix(".json")
+        + "-after-segment-002-tempo-fit-attempt-2.json"
+    )
+    backend.objects[failure_key] = b"{}"
+    backend.modified[local_fit_key] = datetime(
+        2026, 8, 2, 12, 1, tzinfo=UTC
+    )
+    backend.modified[failure_key] = datetime(
+        2026, 8, 2, 12, 2, tzinfo=UTC
+    )
+    assert (
+        find_next_runnable_job(
+            backend,  # type: ignore[arg-type]
+            now=datetime(2026, 8, 2, 12, 3, tzinfo=UTC),
+            stale_claim_seconds=90,
+        )
+        is None
+    )
+
+
+def test_failed_status_binds_to_latest_local_fit_resume_signal() -> None:
+    backend = MemoryBackend()
+    scope = StorageScope(
+        f"intake-{'a' * 32}",
+        f"localize-{'b' * 32}",
+        "de-DE",
+    )
+    keys = ToluvaObjectKeys(scope.project_id)
+    local_fit_key = keys.local_tempo_fit_approval(
+        scope,
+        "segment-002",
+        2,
+    )
+    backend.objects[local_fit_key] = b"{}"
+    writer = JobStatusWriter(
+        backend,  # type: ignore[arg-type]
+        scope=scope,
+        keys=keys,
+        clock=lambda: datetime(2026, 8, 2, 12, 0, tzinfo=UTC),
+    )
+
+    writer.emit("failed", "Stopped after the approved local fit.")
+
+    expected = (
+        keys.status_event(scope, 99, "failed").removesuffix(".json")
+        + "-after-segment-002-tempo-fit-attempt-2.json"
+    )
+    assert expected in backend.objects
 
 
 def test_final_record_is_a_terminal_queue_marker() -> None:

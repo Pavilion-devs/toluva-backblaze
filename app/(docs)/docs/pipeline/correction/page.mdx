@@ -1,0 +1,88 @@
+export const metadata = {
+  title: "The correction loop",
+  description:
+    "The measure, block, approve, regenerate loop that turns a red segment green.",
+};
+
+<Eyebrow>Pipeline</Eyebrow>
+
+# The correction loop
+
+<Lede>
+When a segment overruns its slot, Toluva stops rather than guessing. This is
+the loop that gets it back inside the band without hiding what happened.
+</Lede>
+
+## The loop
+
+<Steps>
+  <Step title="Measure">
+    Generated audio duration is read from the file and compared against the
+    source slot.
+  </Step>
+  <Step title="Block">
+    If the segment is outside the threshold, the exact shortening request is
+    stored and the run blocks **before** another speech call.
+  </Step>
+  <Step title="Approve">
+    A human supplies shorter wording. It is written to B2 as an immutable,
+    hash-bound revision keyed to that segment and attempt.
+  </Step>
+  <Step title="Regenerate">
+    The same job resumes from its measured checkpoint. Completed attempts are
+    reused and their verified parent manifests rehydrated — nothing already
+    paid for is repeated.
+  </Step>
+  <Step title="Remeasure">
+    The new attempt is measured the same way. The loop is bounded by a retry
+    count, not run until it happens to succeed.
+  </Step>
+</Steps>
+
+## A worked example
+
+The example project carries a verified red-to-green archive against a
+**3.800s** slot.
+
+| | Attempt 1 | Attempt 2 |
+|---|---|---|
+| Text | Willkommen bei Toluva. Mit unserer Plattform wird eine einzige Videobotschaft automatisch in vielen verschiedenen Sprachen verfügbar. | Willkommen bei Toluva. Eine Botschaft, viele Sprachen. |
+| Generated | 8.127s | 3.576s |
+| Drift | **+113.87%** | **−5.90%** |
+| Band | Red | Green |
+| Parent run | — | `a9cc6c70…` |
+
+Both attempts, both manifests, both stored audio objects and the parent/child
+relationship remain inspectable at
+[Timing QA](/workspace/timing).
+
+<Callout type="tip" title="The failed attempt is the evidence">
+Attempt 1 is not deleted once attempt 2 succeeds. An audit trail that only
+contains successes is not an audit trail.
+</Callout>
+
+## Rules the loop obeys
+
+- Toluva owns the bounded measure/rewrite/regenerate loop.
+- Each speech attempt is a separate Genblaze run and canonical manifest.
+- A retry uses `Pipeline.from_result()` so the next manifest carries the
+  previous attempt's `parent_run_id`.
+- Translation and QA records are written before and after each billable call,
+  to distinct append-only keys.
+- A retry translation must come from an immutable, hash-bound, human-approved
+  revision.
+- When no approved revision exists, the exact request is stored and the run
+  blocks before another call.
+- A stable job and segment record prevents accidental reruns.
+
+<Callout type="warning" title="Protected terms survive rewriting">
+Any approved revision must keep protected terms exact — `Toluva` in the
+example run. A shorter wording that drops the product name is not a valid
+correction.
+</Callout>
+
+## Bounds
+
+The retry count is bounded. If approved wording still does not fit, the
+segment stays blocked and a human decides — Toluva does not fall back to
+distorting the audio to force a fit.
