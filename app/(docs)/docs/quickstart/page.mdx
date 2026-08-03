@@ -1,0 +1,79 @@
+export const metadata = {
+  title: "Quickstart",
+  description:
+    "Upload a clip, confirm rights and disclosure, and watch the run reach a German edition.",
+};
+
+<Eyebrow>Getting started</Eyebrow>
+
+# Quickstart
+
+<Lede>
+The shortest path from a clip on your machine to a governed German edition,
+with every intermediate record inspectable.
+</Lede>
+
+<Steps>
+  <Step title="Open the workspace">
+    Go to [`/workspace/new`](/workspace/new). If you have not seen a completed
+    run before, the [example project](/workspace) is a good reference for what
+    the output looks like.
+  </Step>
+  <Step title="Drop an MP4">
+    One English speaker, 1–30 seconds, up to 8 MB. The clip is inspected in
+    your browser first — duration is read from the file itself, not guessed
+    from its size — so a clip outside the range is rejected before any upload
+    happens.
+  </Step>
+  <Step title="Confirm rights and disclosure">
+    Both confirmations are required. One asserts you have the right to upload
+    the clip and create a localized edition from it; the other acknowledges
+    that the German track uses a disclosed stock synthetic voice and needs
+    human approval before publishing.
+  </Step>
+  <Step title="Queue the job">
+    The source and an immutable job request are written to Backblaze B2. No
+    provider has been called yet.
+  </Step>
+  <Step title="Watch the run">
+    You land on the run detail page. Stage events are append-only and polled
+    every 20 seconds.
+  </Step>
+  <Step title="Approve if asked">
+    If a segment overruns its slot beyond the band, the run blocks and asks for
+    a shorter wording. Nothing is regenerated until you approve exact text.
+  </Step>
+</Steps>
+
+## What you get
+
+| Output | Where |
+|---|---|
+| German edition (H.264 · AAC · `mov_text`) | Run detail, once the final record exists |
+| WebVTT caption sidecar | Alongside the render in B2 |
+| Per-segment drift measurements | [Timing QA](/workspace/timing) |
+| Authorization decision | [Voice authorization](/workspace/voice) |
+| Canonical manifests and hashes | [Provenance](/workspace/provenance) |
+
+<Callout type="note" title="If the worker is offline">
+The topbar will read **Queue only**. Your job still writes durably to B2 and
+waits — nothing is lost, and no provider is called until the worker claims it.
+</Callout>
+
+## Bounded capacity
+
+Public intake is deliberately small so a single visitor cannot exhaust the
+provider budget.
+
+- At most **4 speech calls** per job
+- At most **400 generated characters** per job
+- **3 admission slots** per UTC day
+
+The worker validates the exact slot before any provider call, so these are
+enforced server-side rather than in the interface.
+
+<Callout type="warning" title="New jobs can be paused">
+When `TOLUVA_ENABLE_LIVE_INTAKE` is off, `/workspace/new` still lets you
+prepare and inspect a source, but queueing is closed. Existing runs and all
+evidence remain accessible.
+</Callout>

@@ -1,0 +1,101 @@
+export const metadata = {
+  title: "Architecture",
+  description:
+    "The full Toluva runtime topology: intake, the storage spine, providers, and the correction loop.",
+};
+
+<Eyebrow>Resources</Eyebrow>
+
+# Architecture
+
+<Lede>
+People on the outside, providers on the far side, and one storage spine that
+every stage reads from and writes to.
+</Lede>
+
+<ArchitectureDiagram framed className="my-8" />
+
+## Reading the diagram
+
+<CardGroup cols={3}>
+  <Card title="Left — people" icon="users">
+    Uploaders bring an approved clip and confirm rights. Reviewers approve exact
+    wording. Operators run the worker and hold the provider budget.
+  </Card>
+  <Card title="Centre — evidence" icon="database">
+    Backblaze B2 is where source lineage, manifests, the timing verdict and the
+    authorization record all become visible.
+  </Card>
+  <Card title="Right — machinery" icon="settings">
+    Providers for transcription, translation and speech; the quality gates that
+    stand in front of them; and the single worker that claims a job.
+  </Card>
+</CardGroup>
+
+The ribbon across the top is the six-stage spine. Everything below it is what
+each stage touches.
+
+## Component map
+
+```text
+app/(marketing)/    overview page
+app/(workspace)/    upload, runs, editions, evidence
+app/(docs)/         this documentation
+app/api/            narrow server routes, credentials never leave here
+lib/                B2 bridge, job contract, policy evaluation, formatting
+services/pipeline/
+  domain/           timing, transcript quality, authorization — pure logic
+  providers/        transcription, translation, speech adapters
+  storage/          B2 keys, checkpoints, append-only records
+  worker/           claim, run, checkpoint, resume
+deploy/vps/         one-replica worker deployment contract
+```
+
+Domain logic is pure — no I/O, no clock, no network — which is what lets the
+whole decision layer be exercised without Docker, B2, or a live provider.
+
+## The two processes
+
+| | Web application | Generation worker |
+|---|---|---|
+| Runtime | Cloudflare Workers | Single VPS replica |
+| On the generation path | No | Yes |
+| Decides | What to show, what to refuse | What to generate, what to spend |
+| Writes | Job requests, review approvals | Every stage record and artefact |
+| If it dies | Runs continue; UI unavailable | Jobs queue durably in B2 |
+
+The web app never calls a provider. That separation is why an outage on either
+side degrades one thing rather than corrupting a run.
+
+## Failure behaviour
+
+| Failure | Behaviour |
+|---|---|
+| B2 read unavailable | Stored snapshot stays visible, labelled as such |
+| Worker offline | Jobs queue durably; no provider is called |
+| Provider call fails | Recorded as a failed attempt, kept in the trail |
+| Segment outside band | Blocks; waits for a hash-bound approved revision |
+| Review record missing | Job stays blocked rather than retrying blind |
+| Job pointer expired | Cleared from the browser; B2 record unaffected |
+
+## Known boundaries
+
+- A second worker replica could claim the same job and double-bill, so the
+  replica count is part of the deployment contract, not a scaling knob.
+- Argos performs translation, not length-targeted rewriting; shortening must
+  come from an approved human revision.
+- Tempo fit is deliberately bounded — beyond a small adjustment Toluva stops
+  rather than distorting delivery.
+- A manifest proves recorded lineage and canonical integrity, not the truth of
+  every supplied fact.
+
+## Source files
+
+<CardGroup cols={2}>
+  <Card title="Repository" icon="book" href="https://github.com/Pavilion-devs/toluva-backblaze">
+    Application, pipeline, worker contract and tests.
+  </Card>
+  <Card title="Media and rights ledger" icon="document" href="https://github.com/Pavilion-devs/toluva-backblaze/blob/main/docs/MEDIA_AND_RIGHTS.md">
+    Source, generated-media and publication rights recorded with hashes.
+  </Card>
+</CardGroup>

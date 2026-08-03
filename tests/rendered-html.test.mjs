@@ -48,8 +48,15 @@ test("server-renders the marketing landing page", async () => {
   assert.match(html, /Start localizing/);
   assert.doesNotMatch(html, /Open the verified run/i);
 
-  // Positioning guard: the template this page came from sold a general-purpose
-  // AI video editor, which AGENTS.md forbids Toluva from claiming to be.
+  // The marketing hero uses the entrant-recorded product walkthrough. The
+  // controlled proof remains available only inside the example workspace.
+  assert.match(html, /toluva-product-walkthrough\.mp4/);
+  assert.match(html, /toluva-product-walkthrough-cover\.jpg/);
+  assert.doesNotMatch(html, /judge-source-muted\.mp4/);
+  assert.doesNotMatch(html, /Compare editions/);
+
+  // Positioning guard: Toluva is a governed localization workflow, not the
+  // general-purpose AI video editor sold by the original page template.
   assert.doesNotMatch(html, /AI video editor/i);
   assert.doesNotMatch(html, /podcasters/i);
   assert.doesNotMatch(html, /auto-captions/i);
@@ -153,6 +160,152 @@ test("new localization renders the real bounded upload workflow", async () => {
   assert.match(html, /generated characters per job/i);
   assert.match(html, /8\.00/);
   assert.doesNotMatch(html, /judge mode/i);
+});
+
+const docsRoutes = [
+  "/docs",
+  "/docs/quickstart",
+  "/docs/setup",
+  "/docs/how-it-works",
+  "/docs/authorization",
+  "/docs/timing",
+  "/docs/pipeline/stages",
+  "/docs/pipeline/correction",
+  "/docs/evidence/storage",
+  "/docs/evidence/manifests",
+  "/docs/reference/intake",
+  "/docs/reference/media-rights",
+  "/docs/architecture",
+];
+
+test("every docs route server-renders from MDX", async () => {
+  for (const route of docsRoutes) {
+    const response = await render(route);
+    assert.equal(response.status, 200, `${route} did not render`);
+    const html = await response.text();
+    assert.doesNotMatch(html, /Application error/i, `${route} rendered an error`);
+  }
+});
+
+test("docs chrome renders the sidebar, search and MDX component map", async () => {
+  const html = await (await render("/docs")).text();
+
+  for (const group of [
+    "Getting started",
+    "Core concepts",
+    "Pipeline",
+    "Evidence",
+    "Reference",
+    "Resources",
+  ]) {
+    assert.match(html, new RegExp(group), `${group} missing from docs sidebar`);
+  }
+
+  // rehype-slug ids are what the "On this page" rail reads.
+  assert.match(html, /<h2[^>]*\bid="/);
+  assert.match(html, /⌘K/);
+  assert.match(html, /aria-controls="docs-drawer"/);
+
+  // MDX wraps multiline component children in a paragraph. Lede must use a
+  // neutral container so the server never emits invalid <p><p> markup that
+  // forces the client to discard and rehydrate the documentation tree.
+  assert.doesNotMatch(html, /<p[^>]*>\s*<p\b/i);
+});
+
+test("docs match the hosted 8 MB intake contract", async () => {
+  for (const route of [
+    "/docs/quickstart",
+    "/docs/reference/intake",
+    "/docs/architecture",
+  ]) {
+    const html = await (await render(route)).text();
+    assert.match(html, /8 MB/, `${route} is missing the hosted limit`);
+    assert.doesNotMatch(html, /12 MB/, `${route} still shows the old limit`);
+  }
+});
+
+test("the custom remark plugin forwards fence titles", async () => {
+  const html = await (await render("/docs/setup")).text();
+  // ```bash title="Install" must reach the rendered element, or CodeGroup tabs
+  // can only ever show the language.
+  assert.match(html, /title="Install"/);
+  assert.match(html, /language-bash/);
+});
+
+test("the architecture diagram renders inline, not as an external asset", async () => {
+  const html = await (await render("/docs/architecture")).text();
+
+  assert.match(html, /viewBox="0 0 1644 1010"/);
+  assert.match(html, /Toluva architecture/);
+  assert.doesNotMatch(html, /<object/);
+
+  // Inline JSX so it uses the self-hosted font stack and the semantic drift
+  // tokens; an <object> would need its own webfont import and could read
+  // neither.
+  assert.match(html, /var\(--font-sans\)/);
+  assert.match(html, /var\(--color-fit-green/);
+
+  // Every region of the reference layout has to be present, not approximated.
+  assert.match(html, /HOW TOLUVA WORKS/);
+  for (const stage of [
+    "Ingest",
+    "Transcribe",
+    "Translate",
+    "Authorize",
+    "Time-fit QA",
+    "Master",
+  ]) {
+    assert.match(html, new RegExp(stage), `spine stage ${stage} missing`);
+  }
+  for (const region of [
+    "UPLOADERS",
+    "REVIEWERS",
+    "OPERATORS",
+    "Source path",
+    "Source lineage",
+    "Manifests &amp; lineage",
+    "Timing verdict",
+    "Authorization record",
+    "Providers",
+    "Quality gates",
+    "Worker",
+    "Generated media",
+    "German",
+    "Storage is the record",
+    "Toluva capabilities",
+    "Media path",
+  ]) {
+    assert.match(html, new RegExp(region), `diagram region ${region} missing`);
+  }
+});
+
+test("the docs section loads no third-party assets", async () => {
+  // The template this section was modelled on used @iconify/react, which
+  // fetches icon data at runtime, and an SVG that @imported Google Fonts.
+  for (const route of docsRoutes) {
+    const html = await (await render(route)).text();
+    for (const host of [
+      "iconify",
+      "fonts.googleapis.com",
+      "cdn.tailwindcss.com",
+      "unpkg.com",
+      "supabase.co",
+    ]) {
+      assert.doesNotMatch(
+        html,
+        new RegExp(host.replace(/\./g, "\\.")),
+        `${route} references ${host}`,
+      );
+    }
+  }
+});
+
+test("docs navigation is reachable from the product surfaces", async () => {
+  const landing = await (await render("/")).text();
+  assert.match(landing, /href="\/docs"/);
+
+  const workspace = await (await render("/workspace")).text();
+  assert.match(workspace, /href="\/docs"/);
 });
 
 test("fails closed when runtime B2 credentials are unavailable", async () => {

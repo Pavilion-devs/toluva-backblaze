@@ -1,0 +1,97 @@
+export const metadata = {
+  title: "Overview",
+  description:
+    "What Toluva is: a governed lane from one approved source video to a verifiable localized edition.",
+};
+
+<Eyebrow>Getting started</Eyebrow>
+
+# Overview
+
+<Lede>
+Toluva turns one approved source video into a time-aligned, consent-aware,
+verifiable localized edition — and keeps the evidence for how it did it.
+</Lede>
+
+Most tools will happily generate a translated voice track. Very few can tell
+you afterwards which voice was authorized for which language, how far each
+generated segment drifted from its source slot, what was rejected before it
+reached a provider, or which exact bytes were produced by which run.
+
+Toluva is built around that second question. Backblaze B2 is the system of
+record rather than a place finished files are dumped, and every stage writes
+what it did before the next stage runs.
+
+## What it does
+
+<CardGroup cols={3}>
+  <Card title="Consent-bound voice" icon="shield">
+    Language, purpose, validity window and the consent-evidence hash are all
+    checked before a provider is called.
+  </Card>
+  <Card title="Measured timing" icon="clock">
+    Every translated segment is measured against its source slot, and drift
+    outside the band triggers a bounded correction loop.
+  </Card>
+  <Card title="Verifiable lineage" icon="database">
+    Each stage is a separate run with a canonical manifest, and stored hashes
+    are re-checked before bytes are described as verified.
+  </Card>
+</CardGroup>
+
+## What it does not claim
+
+Toluva is deliberately narrow, and the interface is written to stay inside
+that boundary.
+
+<Callout type="warning" title="Scope">
+Toluva does not guarantee legal or regulatory compliance, does not support
+every language, does not produce perfect lip sync, and does not remove the
+need for human review. It is compliance-supporting and evidence-ready, which
+is a smaller and more defensible claim.
+</Callout>
+
+A canonical manifest proves recorded lineage and canonical integrity. It does
+not prove that every fact supplied to it was true.
+
+## The shape of a run
+
+<Steps>
+  <Step title="Intake">
+    One short English clip, with source rights and synthetic-voice disclosure
+    confirmed before anything is written.
+  </Step>
+  <Step title="Transcription and translation">
+    The clip is segmented and timed, then translated with protected terms
+    preserved.
+  </Step>
+  <Step title="Authorization">
+    The requested language and purpose are evaluated against the stored
+    authorization record. A request outside scope is refused here, before spend.
+  </Step>
+  <Step title="Speech and timing QA">
+    Speech is generated per segment and measured. Segments inside the band are
+    padded or tempo-fitted; segments outside it block and wait for approval.
+  </Step>
+  <Step title="Composition">
+    Audio fan-in, captions, and a final render — each with its own manifest and
+    hash.
+  </Step>
+</Steps>
+
+## Where to go next
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/docs/quickstart">
+    Upload a clip and follow a run to a German edition.
+  </Card>
+  <Card title="How Toluva works" icon="layers" href="/docs/how-it-works">
+    The six stages in detail, and what each one writes.
+  </Card>
+  <Card title="Architecture" icon="diagram" href="/docs/architecture">
+    The full runtime topology in one diagram.
+  </Card>
+  <Card title="Example project" icon="gallery" href="/workspace">
+    A completed English-to-German run kept as a reference.
+  </Card>
+</CardGroup>

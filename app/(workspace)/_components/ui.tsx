@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-/** Band colouring is semantic — see the drift thresholds in AGENTS.md. */
+/** Band colouring is semantic because each colour represents a QA decision. */
 export const bandChip: Record<"green" | "amber" | "red", string> = {
   amber: "bg-fit-amber-soft border-fit-amber/25 text-fit-amber",
   green: "bg-fit-green-soft border-fit-green/25 text-fit-green",

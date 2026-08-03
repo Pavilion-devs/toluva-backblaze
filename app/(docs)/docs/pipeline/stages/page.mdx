@@ -1,0 +1,91 @@
+export const metadata = {
+  title: "Stages",
+  description:
+    "What each stage reads, what it writes, and which provider it calls.",
+};
+
+<Eyebrow>Pipeline</Eyebrow>
+
+# Stages
+
+<Lede>
+Each stage is a separate Genblaze run with its own canonical manifest. This is
+what each one touches.
+</Lede>
+
+## Provider and model inventory
+
+| Stage | Provider | Model / version |
+|---|---|---|
+| Transcription | Genblaze `SyncProvider` + Faster Whisper | `Systran/faster-whisper-base.en` |
+| Translation | Genblaze `SyncProvider` + Argos Translate | `translate-en_de` package `1.3` |
+| Speech | Genblaze ElevenLabs provider | `eleven_flash_v2_5` stock voice |
+| Audio fan-in | Genblaze `SyncProvider` + FFmpeg | `ffmpeg-segment-audio-v2` |
+| Composition | Genblaze `SyncProvider` + FFmpeg | `ffmpeg-captioned-mp4-v1` |
+| Storage | Genblaze S3 sink + Backblaze Native API bridge | Backblaze B2 |
+
+Pinned packages are `genblaze-core==0.3.8`, `genblaze-s3==0.3.6`, and
+`genblaze-elevenlabs==0.3.3`.
+
+## Reads and writes
+
+### Ingest
+
+- **Reads** the uploaded MP4 and the intake form
+- **Writes** the source master, the immutable job request, the first status
+  event
+- **Calls** no provider
+
+### Transcribe
+
+- **Reads** the source master
+- **Writes** the transcript, per-segment timings, and a quality decision
+- **Calls** Faster Whisper locally
+
+A transcript below the confidence threshold, or with unresolved trailing
+fragments, blocks here. The original provider transcript stays immutable; an
+approved correction is stored as a separate record.
+
+### Translate
+
+- **Reads** the transcript segments
+- **Writes** one translation record per segment
+- **Calls** Argos Translate locally
+
+<Callout type="note" title="Argos is not an instruction follower">
+Argos performs translation, not rewriting to a target length. When a shorter
+version is needed it must come from a hash-bound, human-approved revision —
+Toluva never presents the translator as something it is not.
+</Callout>
+
+### Authorize
+
+- **Reads** the stored authorization record and the job request
+- **Writes** the decision, allowed or blocked
+- **Calls** no provider
+
+### Time-fit QA
+
+- **Reads** the translations and the source segment boundaries
+- **Writes** one speech attempt per call, a measurement, and a decision
+- **Calls** ElevenLabs, at most 4 times per job
+
+### Master
+
+- **Reads** every accepted segment
+- **Writes** the localized audio, the WebVTT sidecar, the final MP4, the
+  disclosure record, and the final manifest
+- **Calls** FFmpeg locally
+
+## Provider discipline
+
+<Callout type="warning" title="Retries are explicit, never automatic">
+The ElevenLabs adapter runs with `max_retries=0`. A provider-level retry
+without a supported idempotency header could double-bill, so Toluva retries
+only as a deliberate, measured correction attempt. A new job ID means an
+intentional new billable run.
+</Callout>
+
+Detectors and domain logic are pure — no I/O, no clock, no network — which is
+what lets the whole decision layer be tested without Docker, B2, or a live
+provider.

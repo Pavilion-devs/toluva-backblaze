@@ -1,50 +1,6 @@
-"use client";
-
 import Link from "next/link";
-import { useState } from "react";
-
-type Edition = "source" | "final";
-
-/*
- * PLACEHOLDER HERO MEDIA — swap point.
- *
- * These two entries are the only thing to change when the entrant-owned
- * recording of the real workflow is ready: drop the file in `public/`, point
- * `src` at it, and either collapse this to a single entry or keep the compare
- * toggle if the recording has a localized counterpart.
- *
- * Until then it shows the example project. The source preview is the
- * rights-cleared, audio-free derivative in `public/`; the German edition stays
- * behind the verified B2 proxy (see docs/MEDIA_AND_RIGHTS.md) so it is loaded
- * on demand and degrades to a notice rather than being copied to `public/`.
- * The private source audio is never served here.
- */
-const editions: Record<
-  Edition,
-  { caption: string; label: string; src: string }
-> = {
-  source: {
-    caption: "English source · 12.419s · muted preview",
-    label: "Source · EN",
-    src: "/judge-source-muted.mp4",
-  },
-  final: {
-    caption: "German edition · 12.419s · disclosed stock synthetic voice",
-    label: "Localized · DE",
-    src: "/api/media?kind=final",
-  },
-};
 
 export function Hero() {
-  const [edition, setEdition] = useState<Edition>("source");
-  const [mediaUnavailable, setMediaUnavailable] = useState(false);
-  const active = editions[edition];
-
-  function show(next: Edition) {
-    setEdition(next);
-    setMediaUnavailable(false);
-  }
-
   return (
     <main className="mx-auto flex w-full max-w-7xl grow flex-col items-center px-5 pt-10 pb-16 sm:px-6 sm:pt-14 md:pt-16 md:pb-20">
       <div
@@ -82,64 +38,21 @@ export function Hero() {
         style={{ animationDelay: "0.3s" }}
       >
         <div className="relative w-full aspect-video">
-          {!mediaUnavailable ? (
-            <video
-              aria-label={active.caption}
-              autoPlay
-              className="absolute inset-0 h-full w-full rounded-xl bg-ink object-cover shadow-[0_30px_60px_-15px_rgba(0,0,0,0.25)]"
-              controls
-              key={edition}
-              loop
-              muted
-              onError={() => setMediaUnavailable(true)}
-              playsInline
-              preload="metadata"
-              src={active.src}
-            />
-          ) : (
-            <div className="absolute inset-0 rounded-xl bg-white/70 backdrop-blur-md border border-white/60 flex flex-col items-center justify-center gap-3 px-8 text-center shadow-[0_30px_60px_-15px_rgba(0,0,0,0.25)]">
-              <span className="font-mono text-xs font-bold tracking-widest text-slate-500 uppercase">
-                B2
-              </span>
-              <strong className="font-display text-xl text-ink">
-                The German edition is served from private B2
-              </strong>
-              <p className="text-[15px] text-slate-600 max-w-md">
-                That read is unavailable right now. The verified record stays
-                available as an example project in the workspace.
-              </p>
-              <button
-                className="mt-2 rounded-full border border-slate-200 bg-white px-5 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
-                onClick={() => show("source")}
-              >
-                Back to the source
-              </button>
-            </div>
-          )}
-
-          <div
-            className="absolute left-3 top-3 flex items-center gap-1 rounded-full border border-white/60 bg-white/75 p-1 shadow-sm backdrop-blur-md sm:left-4 sm:top-4"
-            role="group"
-            aria-label="Compare editions"
-          >
-            {(Object.keys(editions) as Edition[]).map((key) => (
-              <button
-                aria-pressed={edition === key}
-                className={`rounded-full px-3 py-1.5 text-[12px] font-semibold transition-colors sm:px-4 sm:text-[13px] ${
-                  edition === key
-                    ? "bg-ink text-white"
-                    : "text-slate-600 hover:text-ink"
-                }`}
-                key={key}
-                onClick={() => show(key)}
-              >
-                {editions[key].label}
-              </button>
-            ))}
-          </div>
+          <video
+            aria-label="Toluva product walkthrough showing the localization workflow"
+            autoPlay
+            className="absolute inset-0 h-full w-full rounded-xl bg-ink object-cover shadow-[0_30px_60px_-15px_rgba(0,0,0,0.25)]"
+            controls
+            loop
+            muted
+            playsInline
+            poster="/toluva-product-walkthrough-cover.jpg"
+            preload="metadata"
+            src="/toluva-product-walkthrough.mp4"
+          />
         </div>
         <p className="mt-4 text-center text-[13px] font-medium text-slate-500">
-          {active.caption}
+          Toluva in action · entrant-recorded product walkthrough
         </p>
       </div>
     </main>

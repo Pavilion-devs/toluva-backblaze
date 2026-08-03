@@ -4,10 +4,19 @@ const columns = [
   {
     heading: "Product",
     links: [
+      { href: "/workspace/new", label: "New localization" },
       { href: "/workspace", label: "Example project" },
       { href: "/workspace/timing", label: "Timing QA" },
       { href: "/workspace/voice", label: "Voice authorization" },
-      { href: "/workspace/provenance", label: "Provenance" },
+    ],
+  },
+  {
+    heading: "Documentation",
+    links: [
+      { href: "/docs", label: "Overview" },
+      { href: "/docs/quickstart", label: "Quickstart" },
+      { href: "/docs/how-it-works", label: "How Toluva works" },
+      { href: "/docs/architecture", label: "Architecture" },
     ],
   },
   {
@@ -17,10 +26,7 @@ const columns = [
         href: "https://github.com/Pavilion-devs/toluva-backblaze",
         label: "Source code",
       },
-      {
-        href: "https://github.com/Pavilion-devs/toluva-backblaze/blob/main/docs/MEDIA_AND_RIGHTS.md",
-        label: "Media and rights",
-      },
+      { href: "/docs/reference/media-rights", label: "Media and rights" },
       {
         href: "https://github.com/Pavilion-devs/toluva-backblaze/blob/main/THIRD_PARTY_NOTICES.md",
         label: "Third-party notices",

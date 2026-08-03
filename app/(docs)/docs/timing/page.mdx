@@ -1,0 +1,81 @@
+export const metadata = {
+  title: "Timing-drift QA",
+  description:
+    "Drift ratio, the green/amber/red bands, silence padding, and bounded tempo fit.",
+};
+
+<Eyebrow>Core concepts</Eyebrow>
+
+# Timing-drift QA
+
+<Lede>
+Translated speech is almost never the same length as the source it replaces.
+Drift is the primary automated quality metric, and it is measured rather than
+predicted.
+</Lede>
+
+## The metric
+
+```text title="Drift"
+available_duration = source_end - source_start
+drift_ratio        = (generated_duration - available_duration) / available_duration
+```
+
+`generated_duration` is read from the produced audio file. It is never
+estimated from character count — a translation that looks short can still
+overrun, and only measurement catches that.
+
+## The bands
+
+| Band | Absolute drift | Default handling |
+|---|---|---|
+| Green | ≤ 8% | Accept |
+| Amber | > 8% and ≤ 15% | Pad or review |
+| Red | > 15% | Bounded retry |
+
+The thresholds are configurable and visible in the interface — see
+[Timing QA](/workspace/timing) in the workspace.
+
+## Handling by direction
+
+A segment can miss in either direction, and the two are not symmetrical.
+
+<CardGroup cols={2}>
+  <Card title="Generated speech is short" icon="clock">
+    Prefer silence padding, or a measured translation expansion. Padding is
+    free and never distorts delivery.
+  </Card>
+  <Card title="Generated speech is long" icon="waveform">
+    Request a shorter translation with an explicit target duration, regenerate,
+    and remeasure. Apply only a small configured tempo adjustment when safe.
+  </Card>
+</CardGroup>
+
+<Callout type="warning" title="Tempo fit is bounded on purpose">
+Speeding audio up far enough to fit will always work and will always sound
+wrong. Toluva applies only a small measured adjustment; beyond that it stops
+and asks for different wording.
+</Callout>
+
+## What the example run shows
+
+Three segments, measured against their source slots:
+
+| Segment | Slot | Generated | Drift | Band | Action |
+|---|---|---|---|---|---|
+| 001 | 2.580s | 2.351s | −8.88% | Amber | Silence padding |
+| 002 | 3.150s | 3.291s | +4.49% | Green | 1.0449× tempo fit |
+| 003 | 6.689s | 5.851s | −12.52% | Amber | Silence padding |
+
+Two padded, one bounded tempo fit, no extra speech calls — and every segment
+still lands on its original boundary.
+
+<Callout type="note" title="Not everything is green">
+Two of the three sit in amber, and the interface says so. Amber is a working
+state with a defined handling, not a failure being hidden.
+</Callout>
+
+## When the band is exceeded
+
+That is the [correction loop](/docs/pipeline/correction) — measure, block,
+wait for approved wording, regenerate, remeasure.

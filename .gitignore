@@ -48,3 +48,15 @@ next-env.d.ts
 /.wrangler/
 /outputs/
 /work/
+
+# Local demo-film production: ScreenStudio captures, HyperFrames caches,
+# voiceover takes, and large renders stay on the entrant's machine. The
+# deployed hero walkthrough remains intentionally tracked under public/.
+/videos/
+
+# Local agent and submission working notes. These stay on the entrant's
+# machine and are not part of the public product source.
+/AGENTS.md
+/plan.md
+/docs/SUBMISSION.md
+/docs/genblaze-feedback-allowed-output-root.md

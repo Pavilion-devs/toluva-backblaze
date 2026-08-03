@@ -6,7 +6,8 @@ import { useEffect, useState } from "react";
 const links = [
   { href: "#how", label: "How it works" },
   { href: "#evidence", label: "Evidence" },
-  { href: "#features", label: "Features" },
+  { href: "/docs", label: "Docs" },
+  { href: "/docs/architecture", label: "Architecture" },
   {
     external: true,
     href: "https://github.com/Pavilion-devs/toluva-backblaze",
@@ -40,19 +41,29 @@ export function MarketingNav() {
         </span>
       </Link>
 
-      <div className="hidden items-center gap-8 text-[15px] font-medium text-slate-700 md:flex">
-        {links.map((link) => (
-          <a
-            className="transition-colors hover:text-black"
-            href={link.href}
-            key={link.href}
-            {...(link.external
-              ? { rel: "noreferrer", target: "_blank" }
-              : null)}
-          >
-            {link.label}
-          </a>
-        ))}
+      <div className="hidden items-center gap-7 text-[15px] font-medium text-slate-700 md:flex">
+        {links.map((link) =>
+          link.href.startsWith("/") ? (
+            <Link
+              className="transition-colors hover:text-black"
+              href={link.href}
+              key={link.href}
+            >
+              {link.label}
+            </Link>
+          ) : (
+            <a
+              className="transition-colors hover:text-black"
+              href={link.href}
+              key={link.href}
+              {...(link.external
+                ? { rel: "noreferrer", target: "_blank" }
+                : null)}
+            >
+              {link.label}
+            </a>
+          ),
+        )}
       </div>
 
       <div className="flex items-center gap-2">
@@ -124,19 +135,32 @@ export function MarketingNav() {
               </button>
             </div>
             <div className="flex flex-col">
-              {links.map((link) => (
-                <a
-                  className="border-b border-slate-200/70 py-3 text-[15px] font-medium text-slate-700 last:border-b-0 hover:text-black"
-                  href={link.href}
-                  key={link.href}
-                  onClick={() => setOpen(false)}
-                  {...(link.external
-                    ? { rel: "noreferrer", target: "_blank" }
-                    : null)}
-                >
-                  {link.label}
-                </a>
-              ))}
+              {links.map((link) => {
+                const cls =
+                  "border-b border-slate-200/70 py-3 text-[15px] font-medium text-slate-700 last:border-b-0 hover:text-black";
+                return link.href.startsWith("/") ? (
+                  <Link
+                    className={cls}
+                    href={link.href}
+                    key={link.href}
+                    onClick={() => setOpen(false)}
+                  >
+                    {link.label}
+                  </Link>
+                ) : (
+                  <a
+                    className={cls}
+                    href={link.href}
+                    key={link.href}
+                    onClick={() => setOpen(false)}
+                    {...(link.external
+                      ? { rel: "noreferrer", target: "_blank" }
+                      : null)}
+                  >
+                    {link.label}
+                  </a>
+                );
+              })}
             </div>
             <Link
               className="mt-5 block rounded-full bg-ink px-6 py-3 text-center text-[15px] font-medium text-white"

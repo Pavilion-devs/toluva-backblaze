@@ -32,9 +32,9 @@
   --color-ink: #1a1a1a;
 
   /*
-   * Drift bands. AGENTS.md defines these thresholds and requires them to be
-   * visible, so these hues are semantic, never decorative. Tuned for contrast
-   * on white and cream rather than inherited from the marketing palette.
+   * Drift bands are part of the product contract, so these hues are semantic,
+   * never decorative. Tuned for contrast on white and cream rather than
+   * inherited from the marketing palette.
    */
   --color-fit-green: #0f7a52;
   --color-fit-green-soft: #dcf3e8;
